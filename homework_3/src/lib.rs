@@ -1,20 +1,36 @@
 use std::{
     error::Error,
-    io::{self},
+    io::{self, Read},
 };
 
 use crate::operation::Operation;
 
 mod operation;
 
-pub fn run(args: &[String]) -> Result<String, Box<dyn Error>> {
-    let function = Operation::from_array(args)?;
+pub fn run(arg: &str) -> Result<String, Box<dyn Error>> {
+    let operation = Operation::try_from(arg)?;
 
-    let mut text = String::new();
+    let input_data = read_text(&operation)?;
+
+    operation.format(&input_data)
+}
+
+fn read_text(operation: &Operation) -> Result<String, Box<dyn Error>> {
     println!("Insert text:");
-    io::stdin().read_line(&mut text)?;
 
-    function.format(text)
+    let text = match operation {
+        Operation::Csv => {
+            let mut data: Vec<_> = vec![];
+            io::stdin().read_to_end(&mut data)?;
+            String::from_utf8(data)?
+        }
+        _ => {
+            let mut data = String::new();
+            io::stdin().read_line(&mut data)?;
+            data
+        }
+    };
+    Ok(text)
 }
 
 /*
