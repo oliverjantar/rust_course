@@ -83,6 +83,7 @@ struct Csv {
 
 impl Csv {
     fn from_path(path: &str) -> Result<Self, Box<dyn Error>> {
+        //nepouzil jsem ten read_to_string() na cteni souboru, snad je to v pohode ;-)
         let mut reader = Reader::from_path(path)?;
         Self::init(&mut reader)
     }

@@ -15,6 +15,9 @@ pub enum ProgramType {
     Interactive(Receiver<OperationData>, JoinHandle<Result<(), String>>),
 }
 
+//Pouzil jsem tady ten "builder pattern" ale moc se mi to nelibi.
+//Bohuzel ten interaktivni mod byl dost jiny na zpracovani od toho druheho modu s parametrem, tak se mi to nepodarilo moc dobre rozdelit.
+//Zkousel jsem jeste udelat to jednoduche zpracovani pomoci one shot channelu, abych vracel stejny typ, ale prislo mi pak zbytecny kvuli tomu spoustet thread.
 impl ProgramType {
     pub fn init(args: &[String]) -> Self {
         if args.is_empty() {
@@ -70,7 +73,7 @@ impl ProgramType {
             loop {
                 let mut input = String::new();
                 if std::io::stdin().read_line(&mut input).is_err() {
-                    println!("Error while reading from console. Please try again or enter a different input.");
+                    eprintln!("Error while reading from console. Please try again or enter a different input.");
                     continue;
                 }
 
