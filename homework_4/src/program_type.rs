@@ -1,7 +1,7 @@
 use std::{
     error::Error,
     io,
-    sync::mpsc::Receiver,
+    sync::mpsc::{Receiver, Sender},
     thread::{self, JoinHandle},
 };
 
@@ -11,47 +11,44 @@ use crate::operation::Operation;
 type OperationData = (Operation, String);
 
 pub enum ProgramType {
-    OneShot(Result<OperationData, Box<dyn Error>>),
-    Interactive(Receiver<OperationData>, JoinHandle<Result<(), String>>),
+    OneShot(OneShot),
+    Interactive(Interactive),
 }
 
-//Pouzil jsem tady ten "builder pattern" ale moc se mi to nelibi.
-//Bohuzel ten interaktivni mod byl dost jiny na zpracovani od toho druheho modu s parametrem, tak se mi to nepodarilo moc dobre rozdelit.
-//Zkousel jsem jeste udelat to jednoduche zpracovani pomoci one shot channelu, abych vracel stejny typ, ale prislo mi pak zbytecny kvuli tomu spoustet thread.
 impl ProgramType {
     pub fn init(args: &[String]) -> Self {
         if args.is_empty() {
-            let (receiver, handle) = Self::start_interactive();
-            return Self::Interactive(receiver, handle);
+            Self::Interactive(Interactive::start())
+        } else {
+            Self::OneShot(OneShot::start(&args[0]))
         }
-
-        if args.len() != 1 {
-            eprintln!("Incorrect number of arguments. Please provide zero arguments or one of: lowercase, uppercase, no-spaces, slugify, random, alternating, csv.");
-        }
-
-        let one_shot = Self::start_oneshot(&args[0]);
-
-        Self::OneShot(one_shot)
     }
     pub fn process(self) {
         match self {
-            ProgramType::OneShot(value) => match &value {
-                Ok((operation, data)) => Self::format_data(operation, data),
-                Err(error) => eprint!("{}", error),
-            },
-            ProgramType::Interactive(receiver, handle) => {
-                while let Ok((operation, data)) = receiver.recv() {
-                    Self::format_data(&operation, &data)
-                }
+            ProgramType::OneShot(one_shot) => one_shot.process(),
+            ProgramType::Interactive(interactive) => interactive.process(),
+        }
+    }
+}
 
-                if let Err(e) = handle.join() {
-                    eprintln!("Error while reading input data. {:?}", e);
-                }
-            }
+pub struct OneShot {
+    result: Result<OperationData, Box<dyn Error>>,
+}
+
+impl OneShot {
+    fn start(arg: &str) -> Self {
+        let result = OneShot::init_one_shot(arg);
+        OneShot { result }
+    }
+
+    fn process(&self) {
+        match &self.result {
+            Ok((operation, data)) => format_data(operation, data),
+            Err(error) => eprint!("{}", error),
         }
     }
 
-    fn start_oneshot(arg: &str) -> Result<OperationData, Box<dyn Error>> {
+    fn init_one_shot(arg: &str) -> Result<OperationData, Box<dyn Error>> {
         let operation = Operation::try_from(arg)?;
         match &operation {
             Operation::Csv => println!("Insert path to a csv file:"),
@@ -64,54 +61,60 @@ impl ProgramType {
 
         Ok((operation, data))
     }
+}
 
-    fn start_interactive() -> (Receiver<OperationData>, JoinHandle<Result<(), String>>) {
+pub struct Interactive {
+    receiver: Receiver<OperationData>,
+    handle: JoinHandle<Result<(), String>>,
+}
+
+impl Interactive {
+    fn start() -> Self {
         let (sender, receiver) = std::sync::mpsc::channel();
 
-        let handle: JoinHandle<Result<(), String>> = thread::spawn(move || {
-            println!("Enter <command> <text> to format the data or 'q' to quit the program.");
-            loop {
-                let mut input = String::new();
-                if std::io::stdin().read_line(&mut input).is_err() {
-                    eprintln!("Error while reading from console. Please try again or enter a different input.");
-                    continue;
-                }
+        let handle: JoinHandle<Result<(), String>> =
+            thread::spawn(move || Self::interactive_thread(sender));
 
-                let input = input.trim();
+        Self { receiver, handle }
+    }
+    fn process(self) {
+        while let Ok((operation, data)) = self.receiver.recv() {
+            format_data(&operation, &data)
+        }
 
-                if input == "q" {
-                    break;
-                }
-
-                let (operation, input_text) = match Self::parse_params(input) {
-                    Ok(result) => result,
-                    Err(error) => {
-                        eprintln!("{}", error);
-                        continue;
-                    }
-                };
-
-                if sender.send((operation, input_text)).is_err() {
-                    return Err(
-                        "Error while sending data for processing. Ending program.".to_string()
-                    );
-                }
-            }
-            Ok(())
-        });
-
-        (receiver, handle)
+        if let Err(e) = self.handle.join() {
+            eprintln!("Error while reading input data. {:?}", e);
+        }
     }
 
-    fn format_data(operation: &Operation, data: &str) {
-        let result = operation.format(data);
-        match result {
-            Ok(value) => println!("{value}"),
-            Err(error) => eprintln!(
-                "Error while using operation: {:?}. Error: {}",
-                operation, error
-            ),
+    fn interactive_thread(sender: Sender<(Operation, String)>) -> Result<(), String> {
+        println!("Enter <command> <text> to format the data or 'q' to quit the program.");
+        loop {
+            let mut input = String::new();
+            if std::io::stdin().read_line(&mut input).is_err() {
+                eprintln!("Error while reading from console. Please try again or enter a different input.");
+                continue;
+            }
+
+            let input = input.trim();
+
+            if input == "q" {
+                break;
+            }
+
+            let (operation, input_text) = match Self::parse_params(input) {
+                Ok(result) => result,
+                Err(error) => {
+                    eprintln!("{}", error);
+                    continue;
+                }
+            };
+
+            if sender.send((operation, input_text)).is_err() {
+                return Err("Error while sending data for processing. Ending program.".to_string());
+            }
         }
+        Ok(())
     }
 
     fn parse_params(args: &str) -> Result<(Operation, String), Box<dyn Error>> {
@@ -125,6 +128,17 @@ impl ProgramType {
     }
 }
 
+fn format_data(operation: &Operation, data: &str) {
+    let result = operation.format(data);
+    match result {
+        Ok(value) => println!("{value}"),
+        Err(error) => eprintln!(
+            "Error while using operation: {:?}. Error: {}",
+            operation, error
+        ),
+    }
+}
+
 #[cfg(test)]
 mod test {
 
@@ -133,7 +147,7 @@ mod test {
     #[test]
     fn should_parse_params() {
         let input = "lowercase This is some text";
-        let parsed_data = ProgramType::parse_params(input);
+        let parsed_data = Interactive::parse_params(input);
 
         assert!(parsed_data.is_ok());
         assert_eq!(
@@ -145,7 +159,7 @@ mod test {
     #[test]
     fn should_parse_params_for_csv() {
         let input = "csv input.csv";
-        let parsed_data = ProgramType::parse_params(input);
+        let parsed_data = Interactive::parse_params(input);
 
         assert!(parsed_data.is_ok());
         assert_eq!(
@@ -157,7 +171,7 @@ mod test {
     #[test]
     fn should_return_error_for_invalid_operation() {
         let input = "tsdfsd input.csv";
-        let parsed_data = ProgramType::parse_params(input);
+        let parsed_data = Interactive::parse_params(input);
 
         assert!(parsed_data.is_err());
     }
