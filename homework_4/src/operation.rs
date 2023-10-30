@@ -53,7 +53,6 @@ impl Operation {
     }
 
     fn to_csv(text: &str) -> Result<String, Box<dyn Error>> {
-        println!("{}", text);
         let csv = Csv::from_path(text)?;
         Ok(csv.to_string())
     }

@@ -1,7 +1,7 @@
 use std::{
     error::Error,
     io,
-    sync::mpsc::{Receiver, Sender},
+    sync::mpsc::Sender,
     thread::{self, JoinHandle},
 };
 
@@ -10,39 +10,12 @@ use crate::operation::Operation;
 ///Represents operation and data to process
 type OperationData = (Operation, String);
 
-pub enum ProgramType {
-    OneShot(OneShot),
-    Interactive(Interactive),
-}
-
-impl ProgramType {
-    pub fn init(args: &[String]) -> Self {
-        if args.is_empty() {
-            Self::Interactive(Interactive::start())
-        } else {
-            Self::OneShot(OneShot::start(&args[0]))
-        }
-    }
-    pub fn process(self) {
-        match self {
-            ProgramType::OneShot(one_shot) => one_shot.process(),
-            ProgramType::Interactive(interactive) => interactive.process(),
-        }
-    }
-}
-
-pub struct OneShot {
-    result: Result<OperationData, Box<dyn Error>>,
-}
+pub struct OneShot;
 
 impl OneShot {
-    fn start(arg: &str) -> Self {
+    pub fn start(arg: &str) {
         let result = OneShot::init_one_shot(arg);
-        OneShot { result }
-    }
-
-    fn process(&self) {
-        match &self.result {
+        match &result {
             Ok((operation, data)) => format_data(operation, data),
             Err(error) => eprint!("{}", error),
         }
@@ -63,26 +36,20 @@ impl OneShot {
     }
 }
 
-pub struct Interactive {
-    receiver: Receiver<OperationData>,
-    handle: JoinHandle<Result<(), String>>,
-}
+pub struct Interactive;
 
 impl Interactive {
-    fn start() -> Self {
+    pub fn start() {
         let (sender, receiver) = std::sync::mpsc::channel();
 
         let handle: JoinHandle<Result<(), String>> =
             thread::spawn(move || Self::interactive_thread(sender));
 
-        Self { receiver, handle }
-    }
-    fn process(self) {
-        while let Ok((operation, data)) = self.receiver.recv() {
+        while let Ok((operation, data)) = receiver.recv() {
             format_data(&operation, &data)
         }
 
-        if let Err(e) = self.handle.join() {
+        if let Err(e) = handle.join() {
             eprintln!("Error while reading input data. {:?}", e);
         }
     }
