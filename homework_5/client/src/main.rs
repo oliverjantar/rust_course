@@ -42,7 +42,7 @@ fn send_messages(mut stream: TcpStream) -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
-        let message = match cmd.into_message() {
+        let message = match cmd.try_into() {
             Ok(message) => message,
             Err(e) => {
                 eprintln!("Error: {e}");
@@ -71,9 +71,11 @@ enum Command {
     Quit,
 }
 
-impl Command {
-    fn into_message(self) -> Result<MessageType, Box<dyn Error>> {
-        match self {
+impl TryFrom<Command> for MessageType {
+    type Error = Box<dyn Error>;
+
+    fn try_from(value: Command) -> Result<Self, Self::Error> {
+        match value {
             Command::Text(text) => Ok(MessageType::Text(text.to_owned())),
             Command::File(path) => MessageType::get_file(&path),
             Command::Image(path) => MessageType::get_image(&path),
