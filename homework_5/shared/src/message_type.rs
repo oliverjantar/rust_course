@@ -1,11 +1,12 @@
 use std::{
     error::Error,
-    io::{Read, Write},
+    io::{Cursor, Read, Write},
     net::TcpStream,
 };
 
 use bincode::Error as SerdeError;
 use chrono::Utc;
+use image::io::Reader as ImageReader;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -60,9 +61,20 @@ impl MessageType {
     }
 
     pub fn get_image(path: &str) -> Result<MessageType, Box<dyn Error>> {
-        let bytes = std::fs::read(path)?;
-
+        let bytes = match path.ends_with(".png") {
+            true => std::fs::read(path)?,
+            false => MessageType::convert_to_png(path)?,
+        };
         Ok(MessageType::Image(bytes))
+    }
+
+    fn convert_to_png(path: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+        let mut bytes = vec![];
+
+        let img = ImageReader::open(path)?.decode()?;
+
+        img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        Ok(bytes)
     }
 
     fn save_file(path: &str, data: &[u8]) -> std::io::Result<()> {

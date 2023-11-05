@@ -50,8 +50,8 @@ fn send_messages(mut stream: TcpStream) -> Result<(), Box<dyn Error>> {
             }
         };
 
-        println!("Sending message...");
         send_msg(&message, &mut stream)?;
+        println!("Message sent.");
     }
 }
 

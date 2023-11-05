@@ -92,16 +92,21 @@ fn broadcast_messages(
     receiver: Receiver<(SocketAddr, MessageType)>,
 ) {
     while let Ok((ref ip_addr, message)) = receiver.recv() {
-        for (client_addr, stream) in clients.lock().unwrap().iter_mut() {
+        let mut clients_to_remove = vec![];
+        let mut clients_iter = clients.lock().unwrap();
+        for (client_addr, stream) in clients_iter.iter_mut() {
             if ip_addr != client_addr {
                 if let Err(e) = send_msg(&message, stream) {
                     eprintln!(
                         "Error while broadcasting message to client {client_addr}. Error: {e}",
                     );
-
-                    remove_client(&clients, client_addr);
+                    clients_to_remove.push(client_addr);
                 }
             }
+        }
+
+        for addr in clients_to_remove {
+            remove_client(&clients, addr);
         }
     }
 }
