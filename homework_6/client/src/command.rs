@@ -2,6 +2,8 @@ use std::{error::Error, str::FromStr};
 
 use shared::message_type::MessageType;
 
+use crate::utils::{get_file, get_image};
+
 #[derive(PartialEq)]
 pub enum Command {
     Text(String),
@@ -16,8 +18,8 @@ impl TryFrom<Command> for MessageType {
     fn try_from(value: Command) -> Result<Self, Self::Error> {
         match value {
             Command::Text(text) => Ok(MessageType::Text(text.to_owned())),
-            Command::File(path) => MessageType::get_file(&path),
-            Command::Image(path) => MessageType::get_image(&path),
+            Command::File(path) => get_file_message(&path),
+            Command::Image(path) => get_image_message(&path),
             Command::Quit => Err("No message to send.".into()),
         }
     }
@@ -38,4 +40,14 @@ impl FromStr for Command {
             _ => Ok(Command::Text(s.to_string())),
         }
     }
+}
+
+fn get_file_message(path: &str) -> Result<MessageType, Box<dyn Error>> {
+    let (name, data) = get_file(path)?;
+    Ok(MessageType::File(name, data))
+}
+
+fn get_image_message(path: &str) -> Result<MessageType, Box<dyn Error>> {
+    let data = get_image(path)?;
+    Ok(MessageType::Image(data))
 }

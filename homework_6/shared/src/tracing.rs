@@ -1,3 +1,8 @@
+use chrono::Utc;
+use std::{
+    fs::{self, File},
+    path::PathBuf,
+};
 use tracing::{subscriber::set_global_default, Subscriber};
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_log::LogTracer;
@@ -22,4 +27,19 @@ where
 pub fn init_subscriber(subscriber: impl Subscriber + Send + Sync) {
     LogTracer::init().expect("Failed to set logger"); // this is to log trace events by our application
     set_global_default(subscriber).expect("Failed to set subscriber");
+}
+
+pub fn create_log_file(logs_dir: &str, file_prefix: &str) -> Result<File, std::io::Error> {
+    let logs_dir = PathBuf::from(logs_dir);
+
+    if !logs_dir.exists() {
+        fs::create_dir_all(&logs_dir)?;
+    }
+
+    let timestamp = Utc::now().timestamp();
+
+    let path = logs_dir.join(format!("{}_{}.log", file_prefix, timestamp));
+
+    let file = File::create(path)?;
+    Ok(file)
 }

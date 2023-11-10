@@ -1,0 +1,1 @@
+{"v":0,"name":"client","msg":"[STARTING CLIENT - START]","level":30,"hostname":"jiri-lenovo","pid":137019,"time":"2023-11-10T19:35:15.20531356Z","target":"client","line":32,"file":"client/src/main.rs","args":"Args { host: 127.0.0.1, port: 11111, output_dir: \"./data\" }"}

@@ -16,4 +16,8 @@ pub struct Args {
     /// Directory to save incoming files and images
     #[arg(short, long, default_value = "./data")]
     pub output_dir: String,
+
+    /// Directory to save tracing logs from client
+    #[arg(short, long, default_value = "./logs")]
+    pub logs_dir: String,
 }
