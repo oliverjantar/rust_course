@@ -25,19 +25,19 @@ impl MessageType {
         bincode::deserialize(data)
     }
 
-    pub fn handle_message(self) -> Result<(), Box<dyn Error>> {
+    pub fn handle_message(self, output_dir: &str) -> Result<(), Box<dyn Error>> {
         match self {
             MessageType::Text(text) => println!("{}", text),
             MessageType::Image(data) => {
                 println!("Receiving image...");
                 let now = Utc::now();
                 let timestamp = now.timestamp();
-                let file_path = format!("./images/{}.png", timestamp);
+                let file_path = format!("{}/images/{}.png", output_dir, timestamp);
                 MessageType::save_file(&file_path, &data)?;
             }
             MessageType::File(file_name, data) => {
                 println!("Receiving {file_name}");
-                let file_path = format!("./files/{}", file_name);
+                let file_path = format!("{}/files/{}", output_dir, file_name);
                 MessageType::save_file(&file_path, &data)?;
             }
         }

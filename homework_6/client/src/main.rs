@@ -27,7 +27,7 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
 
     let _ = thread::spawn({
         let stream = stream.try_clone().unwrap();
-        move || receive_messages(stream)
+        move || receive_messages(stream, &args.output_dir)
     });
 
     send_messages(stream)?;
@@ -60,9 +60,9 @@ fn send_messages(mut stream: TcpStream) -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn receive_messages(mut stream: TcpStream) {
+fn receive_messages(mut stream: TcpStream, output_dir: &str) {
     while let Ok(message) = receive_msg(&mut stream) {
-        if let Err(e) = message.handle_message() {
+        if let Err(e) = message.handle_message(output_dir) {
             log_error(e)
         }
     }
