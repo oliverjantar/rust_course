@@ -5,7 +5,6 @@ use std::{
 };
 
 use bincode::Error as SerdeError;
-use chrono::Utc;
 use image::io::Reader as ImageReader;
 use serde::{Deserialize, Serialize};
 
@@ -23,26 +22,6 @@ impl MessageType {
 
     pub fn deserialize(data: &[u8]) -> Result<MessageType, SerdeError> {
         bincode::deserialize(data)
-    }
-
-    pub fn handle_message(self, output_dir: &str) -> Result<(), Box<dyn Error>> {
-        match self {
-            MessageType::Text(text) => println!("{}", text),
-            MessageType::Image(data) => {
-                println!("Receiving image...");
-                let now = Utc::now();
-                let timestamp = now.timestamp();
-                let file_path = format!("{}/images/{}.png", output_dir, timestamp);
-                MessageType::save_file(&file_path, &data)?;
-            }
-            MessageType::File(file_name, data) => {
-                println!("Receiving {file_name}");
-                let file_path = format!("{}/files/{}", output_dir, file_name);
-                MessageType::save_file(&file_path, &data)?;
-            }
-        }
-
-        Ok(())
     }
 
     pub fn get_file(path: &str) -> Result<MessageType, Box<dyn Error>> {
@@ -76,22 +55,8 @@ impl MessageType {
         img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         Ok(bytes)
     }
-
-    fn save_file(path: &str, data: &[u8]) -> std::io::Result<()> {
-        let path = std::path::Path::new(path);
-
-        if let Some(dir_path) = path.parent() {
-            if !dir_path.exists() {
-                std::fs::create_dir_all(dir_path)?;
-            }
-        }
-
-        let mut file = std::fs::File::create(path)?;
-        file.write_all(data)?;
-        Ok(())
-    }
 }
-
+#[tracing::instrument(name = "Sending message", skip(message, stream))]
 pub fn send_msg(message: &MessageType, stream: &mut TcpStream) -> Result<(), Box<dyn Error>> {
     let serialized = MessageType::serialize(message)?;
     let length = serialized.len() as u32;
