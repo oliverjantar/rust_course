@@ -2,6 +2,7 @@ mod args;
 use args::Args;
 use clap::Parser;
 use shared::message_type::{receive_msg, send_msg, MessageType};
+use shared::tracing::{get_subscriber, init_subscriber};
 use std::{
     collections::HashMap,
     error::Error,
@@ -16,14 +17,17 @@ use std::{
 fn main() {
     let args = Args::parse();
 
+    let tracing_subscriber = get_subscriber("server".into(), "debug".into(), std::io::stdout);
+    init_subscriber(tracing_subscriber);
+
     if let Err(e) = start(args) {
-        eprintln!("Error while running server: {e}");
+        tracing::error!("Error while running server: {e}");
     }
 }
 
 fn start(args: Args) -> Result<(), Box<dyn Error>> {
     let server = format!("{}:{}", args.host, args.port);
-    println!("Starting server on address {server}...");
+    tracing::info!("Starting server on address {server}...");
 
     let listener = TcpListener::bind(server)?;
 
@@ -41,7 +45,6 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
         || broadcast_messages(clients, receiver)
     });
 
-    //todo change to iterator
     for stream in listener.incoming() {
         match stream {
             Ok(s) => {
@@ -54,7 +57,7 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 continue;
             }
-            Err(e) => eprintln!("encountered IO error: {e}"),
+            Err(e) => tracing::error!("encountered IO error: {e}"),
         }
     }
 
@@ -74,10 +77,10 @@ fn handle_connection(
         .unwrap()
         .insert(addr, stream.try_clone().unwrap());
 
-    println!("New connection from: {addr}");
+    tracing::info!("New connection from: {addr}");
 
     while let Ok(message) = receive_msg(&mut stream) {
-        println!("New message from: {addr}");
+        tracing::info!("New message from: {addr}");
         if let Err(e) = sender.send((addr, message)) {
             panic!(
                 "Error while sending message to channel: ip {}, error: {}",
@@ -97,11 +100,11 @@ fn broadcast_messages(
     while let Ok((ref ip_addr, message)) = receiver.recv() {
         let mut clients_to_remove = vec![];
         let mut clients_iter = clients.lock().unwrap();
-        //todo itertools filter
+
         for (client_addr, stream) in clients_iter.iter_mut() {
             if ip_addr != client_addr {
                 if let Err(e) = send_msg(&message, stream) {
-                    eprintln!(
+                    tracing::error!(
                         "Error while broadcasting message to client {client_addr}. Error: {e}",
                     );
                     clients_to_remove.push(client_addr);
@@ -116,6 +119,6 @@ fn broadcast_messages(
 }
 
 fn remove_client(clients: &Arc<Mutex<HashMap<SocketAddr, TcpStream>>>, ip_addr: &SocketAddr) {
-    println!("Removing client from list {ip_addr}");
+    tracing::info!("Removing client from list {ip_addr}");
     clients.lock().unwrap().remove(ip_addr);
 }

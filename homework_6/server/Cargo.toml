@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 shared = { path = "../shared" }
 clap = { version = "4.4.7", features = ["derive"] }
+tracing = { version = "0.1.40", features = ["log"] }
+tracing-log = "0.2.0"
