@@ -33,8 +33,10 @@ impl Client {
             format!("Connecting to server on {}...\n", server).as_bytes(),
         )?;
 
-        let stream = TcpStream::connect(server)?;
+        let mut stream = TcpStream::connect(server)?;
         stream.set_nodelay(true)?;
+
+        MessagePayload::send_new_user_msg(&mut stream, username)?;
 
         write_to_output(&mut writer, b"Connected. You can now send messages.\n")?;
         let receiver_stream = stream.try_clone()?;
@@ -134,12 +136,15 @@ where
                 let timestamp = now.timestamp();
                 let file_path = format!("{}/images/{}.png", output_dir, timestamp);
                 save_file(&file_path, &data)?;
-                write_to_output(writer, format!("Image saved to: {}", file_path).as_bytes())?;
+                write_to_output(
+                    writer,
+                    format!("Image saved to: {}\n", file_path).as_bytes(),
+                )?;
             }
             MessageType::File(file_name, data) => {
                 let file_path = format!("{}/files/{}", output_dir, file_name);
                 save_file(&file_path, &data)?;
-                write_to_output(writer, format!("File saved to: {}", file_path).as_bytes())?;
+                write_to_output(writer, format!("File saved to: {}\n", file_path).as_bytes())?;
             }
             _ => {}
         }

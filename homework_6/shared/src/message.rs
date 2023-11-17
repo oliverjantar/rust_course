@@ -6,6 +6,7 @@ use std::{
 };
 
 use bincode::Error as BincodeError;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -13,6 +14,7 @@ pub enum MessageType {
     Text(String),
     Image(Vec<u8>),
     File(String, Vec<u8>), // Filename and its content as bytes
+    ServerInfo(String),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -23,6 +25,15 @@ pub struct MessagePayload {
 }
 
 impl MessagePayload {
+    pub fn new_server_msg(text: &str) -> Self {
+        let now = Utc::now();
+
+        MessagePayload {
+            data: MessageType::ServerInfo(text.to_owned()),
+            sender: "server".to_owned(),
+            timestamp: now.timestamp(),
+        }
+    }
     pub fn serialize(message: &MessagePayload) -> Result<Vec<u8>, BincodeError> {
         bincode::serialize(message)
     }
@@ -60,6 +71,21 @@ impl MessagePayload {
 
         Ok(message)
     }
+
+    pub fn send_active_users_msg(
+        stream: &mut TcpStream,
+        active_users: usize,
+    ) -> Result<(), Box<dyn Error>> {
+        let msg = Self::new_server_msg(&format!("Active users: {}", active_users - 1));
+        MessagePayload::send_msg(&msg, stream)?;
+        Ok(())
+    }
+
+    pub fn send_new_user_msg(stream: &mut TcpStream, username: &str) -> Result<(), Box<dyn Error>> {
+        let msg = Self::new_server_msg(&format!("New user connected: {}", username));
+        MessagePayload::send_msg(&msg, stream)?;
+        Ok(())
+    }
 }
 
 impl Display for MessagePayload {
@@ -70,6 +96,7 @@ impl Display for MessagePayload {
             MessageType::File(filename, _) => {
                 writeln!(f, "{} sent a file {}", self.sender, filename)?
             }
+            MessageType::ServerInfo(text) => writeln!(f, "--      {}      --", text)?,
         }
         Ok(())
     }

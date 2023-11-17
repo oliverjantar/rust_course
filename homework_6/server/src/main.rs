@@ -79,6 +79,11 @@ fn handle_connection(
 
     tracing::info!("New connection from: {addr}");
 
+    let clients_count = clients.lock().unwrap().len();
+    MessagePayload::send_active_users_msg(&mut stream, clients_count).unwrap_or_else(|e| {
+        tracing::error!(e, "Unable to send message to a new connection");
+    });
+
     while let Ok(message) = MessagePayload::receive_msg(&mut stream) {
         tracing::info!("New message from: {addr}");
         if let Err(e) = sender.send((addr, message)) {
