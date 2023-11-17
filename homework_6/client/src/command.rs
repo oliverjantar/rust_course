@@ -1,9 +1,8 @@
+use crate::utils::{get_file, get_image};
+use shared::message::MessagePayload;
 use std::{error::Error, str::FromStr};
 
-use shared::message::MessageType;
-
-use crate::utils::{get_file, get_image};
-
+/// User commands.
 #[derive(PartialEq)]
 pub enum Command {
     Text(String),
@@ -12,12 +11,12 @@ pub enum Command {
     Quit,
 }
 
-impl TryFrom<Command> for MessageType {
+impl TryFrom<Command> for MessagePayload {
     type Error = Box<dyn Error>;
 
     fn try_from(value: Command) -> Result<Self, Self::Error> {
         match value {
-            Command::Text(text) => Ok(MessageType::Text(text.to_owned())),
+            Command::Text(text) => Ok(MessagePayload::Text(text.to_owned())),
             Command::File(path) => get_file_message(&path),
             Command::Image(path) => get_image_message(&path),
             Command::Quit => Err("No message to send.".into()),
@@ -42,12 +41,12 @@ impl FromStr for Command {
     }
 }
 
-fn get_file_message(path: &str) -> Result<MessageType, Box<dyn Error>> {
+fn get_file_message(path: &str) -> Result<MessagePayload, Box<dyn Error>> {
     let (name, data) = get_file(path)?;
-    Ok(MessageType::File(name, data))
+    Ok(MessagePayload::File(name, data))
 }
 
-fn get_image_message(path: &str) -> Result<MessageType, Box<dyn Error>> {
+fn get_image_message(path: &str) -> Result<MessagePayload, Box<dyn Error>> {
     let data = get_image(path)?;
-    Ok(MessageType::Image(data))
+    Ok(MessagePayload::Image(data))
 }

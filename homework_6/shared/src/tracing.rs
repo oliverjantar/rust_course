@@ -8,15 +8,22 @@ use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_log::LogTracer;
 use tracing_subscriber::{fmt::MakeWriter, layer::SubscriberExt, EnvFilter, Registry};
 
+//This is probably an overkill at this point but I really like the tracing library and I used it in my previous projects.
+
+/// Returns a tracing subscriber that writes to the given `sink`. The subscriber will only trace events with the given `env_filter`.
+/// name: name of the subscriber (client, server... etc.)
+/// env_filter: filter for the subscriber (debug, info, error)
+/// sink: where to write the logs (stdout, file)
 pub fn get_subscriber<T>(name: String, env_filter: String, sink: T) -> impl Subscriber + Sync + Send
 where
     T: for<'a> MakeWriter<'a> + Send + Sync + 'static,
 {
+    //filtering logs based on severity
     let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(env_filter)); //filtering logs based on severity
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(env_filter));
 
+    //log formatter
     let formatting_layer = BunyanFormattingLayer::new(name, sink);
-    //let formatting_layer = BunyanFormattingLayer::new(name, std::io::stdout); //log formatter
 
     Registry::default()
         .with(env_filter)
@@ -24,11 +31,15 @@ where
         .with(formatting_layer)
 }
 
+/// Initializes the global log subscriber with the given `subscriber`.
 pub fn init_subscriber(subscriber: impl Subscriber + Send + Sync) {
     LogTracer::init().expect("Failed to set logger"); // this is to log trace events by our application
     set_global_default(subscriber).expect("Failed to set subscriber");
 }
 
+/// Creates a log file in the `logs_dir` directory with the name `file_prefix-<timestamp>.log`
+/// If the directory does not exist it will be created.
+/// Returns the file to write to.
 pub fn create_log_file(logs_dir: &str, file_prefix: &str) -> Result<File, std::io::Error> {
     let logs_dir = PathBuf::from(logs_dir);
 

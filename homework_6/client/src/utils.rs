@@ -7,6 +7,8 @@ use std::{
     path::{self, Path},
 };
 
+/// Utility functions that are relevant only to client.
+
 pub fn save_file<T>(path: &T, data: &[u8]) -> io::Result<()>
 where
     T: AsRef<OsStr> + ?Sized,
