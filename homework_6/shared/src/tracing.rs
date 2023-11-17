@@ -20,7 +20,7 @@ where
 
     Registry::default()
         .with(env_filter)
-        .with(JsonStorageLayer) //tracks more info for layers below (request_id, context...)
+        .with(JsonStorageLayer) //tracks more info for layers below (context...)
         .with(formatting_layer)
 }
 

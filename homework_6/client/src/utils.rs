@@ -77,7 +77,6 @@ where
     T: Write,
 {
     writer.write_all(buf)?;
-    writer.write_all(b"\n")?;
     writer.flush()?;
     Ok(())
 }

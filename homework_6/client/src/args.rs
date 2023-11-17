@@ -20,4 +20,8 @@ pub struct Args {
     /// Directory to save tracing logs from client
     #[arg(short, long, default_value = "./logs")]
     pub logs_dir: String,
+
+    /// Username
+    #[arg(short, long, default_value = "anonymous")]
+    pub username: String,
 }

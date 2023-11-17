@@ -1,7 +1,7 @@
 mod args;
 use args::Args;
 use clap::Parser;
-use shared::message_type::{receive_msg, send_msg, MessageType};
+use shared::message::MessagePayload;
 use shared::tracing::{get_subscriber, init_subscriber};
 use std::{
     collections::HashMap,
@@ -68,7 +68,7 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
 
 fn handle_connection(
     mut stream: TcpStream,
-    sender: Arc<Sender<(SocketAddr, MessageType)>>,
+    sender: Arc<Sender<(SocketAddr, MessagePayload)>>,
     clients: Arc<Mutex<HashMap<SocketAddr, TcpStream>>>,
 ) -> Result<(), Box<dyn Error + Send + 'static>> {
     let addr = stream.peer_addr().unwrap();
@@ -79,7 +79,7 @@ fn handle_connection(
 
     tracing::info!("New connection from: {addr}");
 
-    while let Ok(message) = receive_msg(&mut stream) {
+    while let Ok(message) = MessagePayload::receive_msg(&mut stream) {
         tracing::info!("New message from: {addr}");
         if let Err(e) = sender.send((addr, message)) {
             panic!(
@@ -95,7 +95,7 @@ fn handle_connection(
 
 fn broadcast_messages(
     clients: Arc<Mutex<HashMap<SocketAddr, TcpStream>>>,
-    receiver: Receiver<(SocketAddr, MessageType)>,
+    receiver: Receiver<(SocketAddr, MessagePayload)>,
 ) {
     while let Ok((ref ip_addr, message)) = receiver.recv() {
         let mut clients_to_remove = vec![];
@@ -103,7 +103,7 @@ fn broadcast_messages(
 
         for (client_addr, stream) in clients_iter.iter_mut() {
             if ip_addr != client_addr {
-                if let Err(e) = send_msg(&message, stream) {
+                if let Err(e) = MessagePayload::send_msg(&message, stream) {
                     tracing::error!(
                         "Error while broadcasting message to client {client_addr}. Error: {e}",
                     );

@@ -35,8 +35,13 @@ fn start<T>(args: Args, writer: T) -> Result<(), Box<dyn Error>>
 where
     T: Write + Send + 'static,
 {
-    let (client_sender, client_receiver) =
-        Client::connect(args.host, args.port, writer, &args.output_dir)?;
+    let (client_sender, client_receiver) = Client::connect(
+        args.host,
+        args.port,
+        writer,
+        &args.output_dir,
+        &args.username,
+    )?;
 
     let _ = thread::spawn(|| client_receiver.start());
 

@@ -1,6 +1,6 @@
 use std::{error::Error, str::FromStr};
 
-use shared::message_type::MessageType;
+use shared::message::MessageType;
 
 use crate::utils::{get_file, get_image};
 
