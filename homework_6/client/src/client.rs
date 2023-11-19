@@ -17,7 +17,7 @@ pub struct Client;
 
 impl Client {
     /// Connects to the server and returns a sender and a receiver. The creation is inspired by the channel.
-    /// writer: T is generic to abstract the output. It can be stdout, file or anything that implements Write. I made it generic to make it easier to test and not to use stdout in tests.
+    /// writer: T is generic to abstract the output. It can be stdout, file or anything that implements Write. I made it generic to make it easier to test and not to use println! all the time.
     pub fn connect<T>(
         mut writer: T,
         host: Ipv4Addr,
@@ -38,7 +38,7 @@ impl Client {
         let mut stream = TcpStream::connect(server)?;
         stream.set_nodelay(true)?;
 
-        // Once the connection is established, send the username to the server. It is then broadcasted for all clients.
+        // Once the connection is established, send the username to the server. It is then broadcasted to all clients.
         Message::send_new_user_msg(&mut stream, username)?;
 
         write_to_output(&mut writer, b"Connected. You can now send messages.\n")?;

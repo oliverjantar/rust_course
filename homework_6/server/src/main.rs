@@ -1,4 +1,5 @@
 mod args;
+
 use args::Args;
 use clap::Parser;
 use shared::message::Message;
@@ -110,23 +111,26 @@ fn broadcast_messages(
     clients: Arc<Mutex<HashMap<SocketAddr, TcpStream>>>,
     receiver: Receiver<(SocketAddr, Message)>,
 ) {
-    while let Ok((ref ip_addr, message)) = receiver.recv() {
-        let mut clients_to_remove = vec![];
+    while let Ok((ip_addr, message)) = receiver.recv() {
         let mut clients_iter = clients.lock().unwrap();
 
-        for (client_addr, stream) in clients_iter.iter_mut() {
-            if ip_addr != client_addr {
+        let clients_to_remove: Vec<SocketAddr> = clients_iter
+            .iter_mut()
+            .filter(|(client_addr, _)| **client_addr != ip_addr) // Filter out the client with ip_addr
+            .filter_map(|(client_addr, stream)| {
                 if let Err(e) = Message::send_msg(&message, stream) {
                     tracing::error!(
-                        "Error while broadcasting message to client {client_addr}. Error: {e}",
+                        "Error while broadcasting message to client {client_addr}. Error: {e}"
                     );
-                    clients_to_remove.push(client_addr);
+                    Some(*client_addr)
+                } else {
+                    None
                 }
-            }
-        }
+            })
+            .collect();
 
         clients_to_remove.iter().for_each(|&addr| {
-            remove_client(&clients, addr);
+            remove_client(&clients, &addr);
         });
     }
 }

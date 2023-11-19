@@ -1,6 +1,5 @@
-use std::net::Ipv4Addr;
-
 use clap::{command, Parser};
+use std::net::Ipv4Addr;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

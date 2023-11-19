@@ -25,7 +25,7 @@ fn main() {
 
 /// Sets up tracing for the client.
 /// The logs will be written to the `logs_dir` directory. The default tracing file is ./logs/client-<timestamp>.log
-/// I didn't want to mix up the tracing logs and messages from other users so the default output is a file.
+/// I didn't want to mix up the tracing logs and chat messages so the default output is a file.
 fn setup_tracing(logs_dir: &str) {
     let log_file = create_log_file(logs_dir, "client").expect("Failed to create log file");
 
