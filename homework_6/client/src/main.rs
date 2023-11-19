@@ -1,6 +1,7 @@
 mod args;
 mod client;
 mod command;
+mod encryption;
 mod utils;
 
 use args::Args;
@@ -46,6 +47,8 @@ where
         args.port,
         &args.output_dir,
         &args.username,
+        args.enable_encryption,
+        &args.encryption_key,
     )?;
 
     let _ = thread::spawn(|| client_receiver.start());

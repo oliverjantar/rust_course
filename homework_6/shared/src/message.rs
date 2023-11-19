@@ -94,7 +94,7 @@ impl Message {
 }
 
 /// Inner stuct that contains the data of the message.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum MessagePayload {
     Text(String),
     Image(Vec<u8>),

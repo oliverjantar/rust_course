@@ -1,4 +1,6 @@
+use base64::{engine::general_purpose, Engine};
 use image::io::Reader as ImageReader;
+use shared::message::MessagePayload;
 use std::{
     error::Error,
     ffi::OsStr,
@@ -6,6 +8,8 @@ use std::{
     io::{self, Cursor, Write},
     path::{self, Path},
 };
+
+use crate::encryption;
 
 /// Utility functions that are relevant only to client.
 
@@ -81,4 +85,33 @@ where
     writer.write_all(buf)?;
     writer.flush()?;
     Ok(())
+}
+
+pub fn encrypt_payload(data: MessagePayload, key: &[u8]) -> Result<MessagePayload, Box<dyn Error>> {
+    if let MessagePayload::Text(text) = data {
+        let (encrypted_msg, nonce) = encryption::encrypt(key, text.as_bytes())?;
+
+        let mut message_to_send = nonce;
+        message_to_send.extend_from_slice(&encrypted_msg);
+        let encoded = general_purpose::STANDARD.encode(&message_to_send);
+        Ok(MessagePayload::Text(encoded))
+    } else {
+        Ok(data)
+    }
+}
+
+pub fn decrypt_payload(
+    data: MessagePayload,
+    encryption_key: &[u8],
+) -> Result<MessagePayload, Box<dyn Error>> {
+    if let MessagePayload::Text(text) = data {
+        let decoded = general_purpose::STANDARD.decode(text.as_bytes())?;
+        let nonce = &decoded[..encryption::NONCE_SIZE];
+        let encrypted_msg = &decoded[encryption::NONCE_SIZE..];
+        let decrypted = encryption::decrypt(encryption_key, nonce, encrypted_msg)?;
+        let text = String::from_utf8(decrypted)?;
+        Ok(MessagePayload::Text(text))
+    } else {
+        Ok(data)
+    }
 }

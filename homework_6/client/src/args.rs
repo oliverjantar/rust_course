@@ -24,4 +24,12 @@ pub struct Args {
     /// Username
     #[arg(short, long, default_value = "anonymous")]
     pub username: String,
+
+    /// Enable encryption
+    #[arg(long, default_value_t = false)]
+    pub enable_encryption: bool,
+
+    /// Encryption key
+    #[arg(long, default_value = "secret_encryption_key")]
+    pub encryption_key: String,
 }
