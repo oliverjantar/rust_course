@@ -1,0 +1,16 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+aes-gcm = { version = "0.10.3", features = ["std"] }
+clap = { version = "4.4.7", features = ["derive"] }
+chrono = "0.4.31"
+image = "0.24.7"
+shared = { path = '../shared' }
+tracing = { version = "0.1.40", features = ["log"] }
+tracing-log = "0.2.0"
+base64 = "0.21.5"
