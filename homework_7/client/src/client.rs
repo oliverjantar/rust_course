@@ -11,7 +11,7 @@ use shared::message::{Message, MessagePayload};
 use crate::{
     command::Command,
     encryption,
-    utils::{decrypt_payload, encrypt_payload, log_error, save_file, write_to_output},
+    utils::{decrypt_payload, encrypt_payload, save_file, write_to_output},
 };
 
 /// The main client struct.
@@ -223,4 +223,9 @@ where
         }
         Ok(())
     }
+}
+
+fn log_error(e: Box<dyn Error>) {
+    tracing::error!("Error while running client: {e}");
+    eprintln!("Error while running client: {e}");
 }

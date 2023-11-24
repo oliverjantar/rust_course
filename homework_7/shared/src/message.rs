@@ -1,44 +1,12 @@
-use bincode::Error as BincodeError;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::{
-    error::Error,
     fmt::Display,
     io::{Read, Write},
     net::TcpStream,
 };
 
-#[derive(Debug)]
-pub enum MessageError {
-    SerializeError(BincodeError),
-    DeserializeError(BincodeError),
-    SendError(std::io::Error),
-    RecieveError(std::io::Error),
-}
-
-impl Display for MessageError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MessageError::SerializeError(err) => write!(f, "Failed to serialize message: {}", err),
-            MessageError::DeserializeError(err) => {
-                write!(f, "Failed to deserialize message: {}", err)
-            }
-            MessageError::SendError(err) => write!(f, "Failed to send message: {}", err),
-            MessageError::RecieveError(err) => write!(f, "Failed to receive message: {}", err),
-        }
-    }
-}
-
-impl Error for MessageError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            MessageError::SerializeError(err) => Some(err),
-            MessageError::DeserializeError(err) => Some(err),
-            MessageError::SendError(err) => Some(err),
-            MessageError::RecieveError(err) => Some(err),
-        }
-    }
-}
+use crate::errors::MessageError;
 
 /// Main message struct that wraps the data and other metadata fields.
 /// sender: the username of the sender

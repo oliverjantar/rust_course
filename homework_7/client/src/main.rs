@@ -9,13 +9,18 @@ use clap::Parser;
 use client::Client;
 use shared::tracing::{create_log_file, get_subscriber, init_subscriber};
 use std::io::Write;
-use utils::log_error;
+
+use anyhow::{Context, Result};
 
 use std::{error::Error, thread};
 
 fn main() {
     let args = Args::parse();
-    setup_tracing(&args.logs_dir);
+    if let Err(e) = setup_tracing(&args.logs_dir) {
+        tracing::error!("Error while running client. {e}");
+        eprintln!("Error while running client. {e}");
+        return;
+    }
 
     let output_writer = std::io::stdout();
 
@@ -27,11 +32,12 @@ fn main() {
 /// Sets up tracing for the client.
 /// The logs will be written to the `logs_dir` directory. The default tracing file is ./logs/client-<timestamp>.log
 /// I didn't want to mix up the tracing logs and chat messages so the default output is a file.
-fn setup_tracing(logs_dir: &str) {
-    let log_file = create_log_file(logs_dir, "client").expect("Failed to create log file");
+fn setup_tracing(logs_dir: &str) -> Result<()> {
+    let log_file = create_log_file(logs_dir, "client")?;
 
     let tracing_subscriber = get_subscriber("client".into(), "debug".into(), log_file);
-    init_subscriber(tracing_subscriber);
+    init_subscriber(tracing_subscriber)?;
+    Ok(())
 }
 
 /// Starts the client. It will connect to the server and start listening for commands.
@@ -56,4 +62,9 @@ where
     client_sender.start()?;
 
     Ok(())
+}
+
+fn log_error(e: Box<dyn Error>) {
+    tracing::error!("Error while running client: {e}");
+    eprintln!("Error while running client: {e}");
 }

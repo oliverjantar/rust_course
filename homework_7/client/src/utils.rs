@@ -73,11 +73,6 @@ where
     Ok(bytes)
 }
 
-pub fn log_error(e: Box<dyn Error>) {
-    tracing::error!("Error: {e}");
-    eprintln!("Error: {e}");
-}
-
 pub fn write_to_output<T>(writer: &mut T, buf: &[u8]) -> Result<(), std::io::Error>
 where
     T: Write,
