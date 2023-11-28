@@ -20,7 +20,9 @@ fn main() {
 
     // Setup tracing, default output is stdout.
     let tracing_subscriber = get_subscriber("server".into(), "debug".into(), std::io::stdout);
-    init_subscriber(tracing_subscriber);
+    if let Err(e) = init_subscriber(tracing_subscriber) {
+        tracing::error!("Error while setting up server: {e}");
+    }
 
     if let Err(e) = start(args) {
         tracing::error!("Error while running server: {e}");

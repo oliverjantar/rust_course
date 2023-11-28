@@ -1,31 +1,32 @@
 mod args;
 mod client;
+mod client_error;
 mod command;
 mod encryption;
 mod utils;
 
+use anyhow::Result;
 use args::Args;
 use clap::Parser;
 use client::Client;
 use shared::tracing::{create_log_file, get_subscriber, init_subscriber};
+
 use std::io::Write;
-
-use anyhow::{Context, Result};
-
-use std::{error::Error, thread};
+use std::thread;
 
 fn main() {
     let args = Args::parse();
     if let Err(e) = setup_tracing(&args.logs_dir) {
-        tracing::error!("Error while running client. {e}");
-        eprintln!("Error while running client. {e}");
+        let msg = "Error while starting a chat client.";
+        log_error(msg, e);
         return;
     }
 
     let output_writer = std::io::stdout();
 
     if let Err(e) = start(args, output_writer) {
-        log_error(e);
+        let msg = "Error while running client.";
+        log_error(msg, e);
     }
 }
 
@@ -43,7 +44,7 @@ fn setup_tracing(logs_dir: &str) -> Result<()> {
 /// Starts the client. It will connect to the server and start listening for commands.
 /// Receiving messages will be handled in a separate thread.
 #[tracing::instrument(name = "Starting client", skip(writer))]
-fn start<T>(args: Args, writer: T) -> Result<(), Box<dyn Error>>
+fn start<T>(args: Args, writer: T) -> Result<()>
 where
     T: Write + Send + 'static,
 {
@@ -64,7 +65,7 @@ where
     Ok(())
 }
 
-fn log_error(e: Box<dyn Error>) {
-    tracing::error!("Error while running client: {e}");
-    eprintln!("Error while running client: {e}");
+fn log_error(msg: &str, e: anyhow::Error) {
+    tracing::error!("{msg} {e}");
+    eprintln!("{msg} {e}");
 }

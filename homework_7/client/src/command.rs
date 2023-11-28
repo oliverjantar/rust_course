@@ -1,6 +1,9 @@
-use crate::utils::{get_file, get_image};
+use crate::{
+    client_error::ClientError,
+    utils::{get_file, get_image},
+};
 use shared::message::MessagePayload;
-use std::{error::Error, str::FromStr};
+use std::str::FromStr;
 
 /// User commands.
 #[derive(PartialEq)]
@@ -12,20 +15,20 @@ pub enum Command {
 }
 
 impl TryFrom<Command> for MessagePayload {
-    type Error = Box<dyn Error>;
+    type Error = ClientError;
 
     fn try_from(value: Command) -> Result<Self, Self::Error> {
         match value {
             Command::Text(text) => Ok(MessagePayload::Text(text.to_owned())),
             Command::File(path) => get_file_message(&path),
             Command::Image(path) => get_image_message(&path),
-            Command::Quit => Err("No message to send.".into()),
+            Command::Quit => Err(ClientError::InvalidCommand),
         }
     }
 }
 
 impl FromStr for Command {
-    type Err = String;
+    type Err = ClientError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.splitn(2, ' ');
@@ -41,12 +44,12 @@ impl FromStr for Command {
     }
 }
 
-fn get_file_message(path: &str) -> Result<MessagePayload, Box<dyn Error>> {
+fn get_file_message(path: &str) -> Result<MessagePayload, ClientError> {
     let (name, data) = get_file(path)?;
     Ok(MessagePayload::File(name, data))
 }
 
-fn get_image_message(path: &str) -> Result<MessagePayload, Box<dyn Error>> {
+fn get_image_message(path: &str) -> Result<MessagePayload, ClientError> {
     let data = get_image(path)?;
     Ok(MessagePayload::Image(data))
 }

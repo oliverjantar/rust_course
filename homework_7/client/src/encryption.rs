@@ -1,29 +1,33 @@
-use std::error::Error;
-
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Key, Nonce,
 };
 
+use crate::client_error::ClientError;
+
 pub const NONCE_SIZE: usize = 12;
 
-pub fn encrypt(key: &[u8], message: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Box<dyn Error>> {
+pub fn encrypt(key: &[u8], message: &[u8]) -> Result<(Vec<u8>, Vec<u8>), ClientError> {
     // key needs to be 32 bytes, otherwise from_slice panics
     let key = Key::<Aes256Gcm>::from_slice(key);
 
     let cipher = Aes256Gcm::new(key);
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96-bits; unique per message
-    let ciphertext = cipher.encrypt(&nonce, message)?;
+    let ciphertext = cipher
+        .encrypt(&nonce, message)
+        .map_err(|_| ClientError::EncryptMessage)?;
     Ok((ciphertext, nonce.to_vec()))
 }
 
-pub fn decrypt(key: &[u8], nonce: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
+pub fn decrypt(key: &[u8], nonce: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, ClientError> {
     let key = Key::<Aes256Gcm>::from_slice(key);
 
     let cipher = Aes256Gcm::new(key);
     let nonce = Nonce::from_slice(nonce);
 
-    let plaintext = cipher.decrypt(nonce, ciphertext.as_ref())?;
+    let plaintext = cipher
+        .decrypt(nonce, ciphertext.as_ref())
+        .map_err(|_| ClientError::DecryptMessage(None))?;
 
     Ok(plaintext)
 }

@@ -1,14 +1,15 @@
 use std::{
-    error::Error,
     io::Write,
     net::{Ipv4Addr, TcpStream},
     str::FromStr,
 };
 
+use anyhow::Result;
 use chrono::Utc;
 use shared::message::{Message, MessagePayload};
 
 use crate::{
+    client_error::ClientError,
     command::Command,
     encryption,
     utils::{decrypt_payload, encrypt_payload, save_file, write_to_output},
@@ -28,7 +29,7 @@ impl Client {
         username: &str,
         enable_encryption: bool,
         encryption_key: &str,
-    ) -> Result<(ClientSender, ClientReceiver<T>), Box<dyn Error>>
+    ) -> Result<(ClientSender, ClientReceiver<T>)>
     where
         T: Write,
     {
@@ -98,7 +99,7 @@ impl ClientSender {
     }
 
     /// Starts listening for user input and sends it to the server.
-    pub fn start(mut self) -> Result<(), Box<dyn Error>> {
+    pub fn start(mut self) -> Result<()> {
         loop {
             let mut text = String::new();
 
@@ -113,7 +114,8 @@ impl ClientSender {
             let mut data = match cmd.try_into() {
                 Ok(data) => data,
                 Err(e) => {
-                    log_error(e);
+                    tracing::error!("Cannot process command: {e}");
+                    eprintln!("Cannot process command: {e}");
                     continue;
                 }
             };
@@ -167,7 +169,8 @@ where
                 self.enable_encryption,
                 &self.encryption_key,
             ) {
-                log_error(e)
+                tracing::error!("Error while handling message: {e}");
+                eprintln!("Error while handling message: {e}");
             }
         }
     }
@@ -180,14 +183,17 @@ where
         output_dir: &str,
         enable_encryption: bool,
         encryption_key: &[u8],
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), ClientError> {
         if enable_encryption {
             match decrypt_payload(message.data, encryption_key) {
                 Ok(data) => message.data = data,
-                Err(_) => {
-                    writer.write_all(
+                Err(e) => {
+                    tracing::warn!("Decrypting payload error. {e}");
+                    write_to_output(
+                        writer,
                         format!("Unable to decrypt message from {}.\n", message.sender).as_bytes(),
                     )?;
+
                     return Ok(());
                 }
             }
@@ -202,7 +208,7 @@ where
         message: MessagePayload,
         writer: &mut T,
         output_dir: &str,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), ClientError> {
         match message {
             MessagePayload::Image(data) => {
                 let now = Utc::now();
@@ -223,9 +229,4 @@ where
         }
         Ok(())
     }
-}
-
-fn log_error(e: Box<dyn Error>) {
-    tracing::error!("Error while running client: {e}");
-    eprintln!("Error while running client: {e}");
 }

@@ -1,19 +1,17 @@
+use crate::{client_error::ClientError, encryption};
 use base64::{engine::general_purpose, Engine};
 use image::io::Reader as ImageReader;
 use shared::message::MessagePayload;
 use std::{
-    error::Error,
     ffi::OsStr,
     fs,
-    io::{self, Cursor, Write},
+    io::{Cursor, Write},
     path::{self, Path},
 };
 
-use crate::encryption;
-
 /// Utility functions that are relevant only to client.
 
-pub fn save_file<T>(path: &T, data: &[u8]) -> io::Result<()>
+pub fn save_file<T>(path: &T, data: &[u8]) -> Result<(), ClientError>
 where
     T: AsRef<OsStr> + ?Sized,
 {
@@ -21,16 +19,16 @@ where
 
     if let Some(dir_path) = path.parent() {
         if !dir_path.exists() {
-            fs::create_dir_all(dir_path)?;
+            fs::create_dir_all(dir_path).map_err(ClientError::CreateDir)?;
         }
     }
 
-    let mut file = fs::File::create(path)?;
-    file.write_all(data)?;
+    let mut file = fs::File::create(path).map_err(ClientError::CreateFile)?;
+    file.write_all(data).map_err(ClientError::WriteToFile)?;
     Ok(())
 }
 
-pub fn get_file<T>(path: &T) -> Result<(String, Vec<u8>), Box<dyn Error>>
+pub fn get_file<T>(path: &T) -> Result<(String, Vec<u8>), ClientError>
 where
     T: AsRef<OsStr> + ?Sized,
 {
@@ -40,49 +38,61 @@ where
 
     let file_name = match file_name_os {
         Some(file_name) => file_name.to_string_lossy(),
-        None => return Err("File does not exist.".into()),
+        None => return Err(ClientError::FileNotExists),
     };
 
-    let bytes = fs::read(path)?;
+    let bytes = fs::read(path).map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => ClientError::FileNotExists,
+        std::io::ErrorKind::PermissionDenied => ClientError::FilePermissions,
+        _ => ClientError::ReadFromFile,
+    })?;
 
     Ok((file_name.to_string(), bytes))
 }
 
-pub fn get_image<T>(path: &T) -> Result<Vec<u8>, Box<dyn Error>>
+pub fn get_image<T>(path: &T) -> Result<Vec<u8>, ClientError>
 where
     T: AsRef<OsStr> + ?Sized,
 {
     let path = Path::new(path);
 
     let bytes = match path.ends_with(".png") {
-        true => fs::read(path)?,
+        true => fs::read(path).map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => ClientError::FileNotExists,
+            std::io::ErrorKind::PermissionDenied => ClientError::FilePermissions,
+            _ => ClientError::ReadFromFile,
+        })?,
         false => convert_to_png(path)?,
     };
     Ok(bytes)
 }
 
-fn convert_to_png<T>(path: &T) -> Result<Vec<u8>, Box<dyn Error>>
+fn convert_to_png<T>(path: &T) -> Result<Vec<u8>, ClientError>
 where
     T: AsRef<Path> + ?Sized,
 {
     let mut bytes = vec![];
 
-    let img = ImageReader::open(path)?.decode()?;
+    let img = ImageReader::open(path)
+        .map_err(ClientError::OpenImage)?
+        .decode()
+        .map_err(|_| ClientError::ConvertImagePng)?;
 
-    img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+    img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)
+        .map_err(|_| ClientError::ConvertImagePng)?;
     Ok(bytes)
 }
 
-pub fn write_to_output<T>(writer: &mut T, buf: &[u8]) -> Result<(), std::io::Error>
+pub fn write_to_output<T>(writer: &mut T, buf: &[u8]) -> Result<(), ClientError>
 where
     T: Write,
 {
-    writer.write_all(buf)?;
-    writer.flush()?;
+    writer.write_all(buf).map_err(ClientError::Write)?;
+    writer.flush().map_err(ClientError::Write)?;
     Ok(())
 }
 
-pub fn encrypt_payload(data: MessagePayload, key: &[u8]) -> Result<MessagePayload, Box<dyn Error>> {
+pub fn encrypt_payload(data: MessagePayload, key: &[u8]) -> Result<MessagePayload, ClientError> {
     if let MessagePayload::Text(text) = data {
         let (encrypted_msg, nonce) = encryption::encrypt(key, text.as_bytes())?;
 
@@ -98,13 +108,19 @@ pub fn encrypt_payload(data: MessagePayload, key: &[u8]) -> Result<MessagePayloa
 pub fn decrypt_payload(
     data: MessagePayload,
     encryption_key: &[u8],
-) -> Result<MessagePayload, Box<dyn Error>> {
+) -> Result<MessagePayload, ClientError> {
     if let MessagePayload::Text(text) = data {
-        let decoded = general_purpose::STANDARD.decode(text.as_bytes())?;
+        let decoded = general_purpose::STANDARD
+            .decode(text.as_bytes())
+            .map_err(|_| {
+                ClientError::DecryptMessage(Some(
+                    "Error while decoding message from base64".to_string(),
+                ))
+            })?;
         let nonce = &decoded[..encryption::NONCE_SIZE];
         let encrypted_msg = &decoded[encryption::NONCE_SIZE..];
         let decrypted = encryption::decrypt(encryption_key, nonce, encrypted_msg)?;
-        let text = String::from_utf8(decrypted)?;
+        let text = String::from_utf8(decrypted).map_err(|_| ClientError::DecryptMessage(None))?;
         Ok(MessagePayload::Text(text))
     } else {
         Ok(data)

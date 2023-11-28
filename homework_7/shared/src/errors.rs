@@ -1,66 +1,24 @@
-use std::{error::Error, fmt::Display};
-
 use bincode::Error as BincodeError;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum MessageError {
+    #[error("Failed to serialize message")]
     SerializeError(BincodeError),
+    #[error("Failed to deserialize message")]
     DeserializeError(BincodeError),
+    #[error("Failed to send message")]
     SendError(std::io::Error),
+    #[error("Failed to receive message")]
     RecieveError(std::io::Error),
 }
 
-impl Display for MessageError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            MessageError::SerializeError(err) => write!(f, "Failed to serialize message: {}", err),
-            MessageError::DeserializeError(err) => {
-                write!(f, "Failed to deserialize message: {}", err)
-            }
-            MessageError::SendError(err) => write!(f, "Failed to send message: {}", err),
-            MessageError::RecieveError(err) => write!(f, "Failed to receive message: {}", err),
-        }
-    }
-}
-
-impl Error for MessageError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            MessageError::SerializeError(err) => Some(err),
-            MessageError::DeserializeError(err) => Some(err),
-            MessageError::SendError(err) => Some(err),
-            MessageError::RecieveError(err) => Some(err),
-        }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum TracingErrors {
+    #[error("Failed to create directory for logs")]
     CreateDirError(std::io::Error),
+    #[error("Failed to create log file")]
     CreateLogFileError(std::io::Error),
+    #[error("Failed to setup tracing")]
     SetupTracingError(String),
-}
-
-impl Display for TracingErrors {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TracingErrors::CreateDirError(e) => {
-                write!(f, "Failed to create directory for logs: {}", e)
-            }
-            TracingErrors::CreateLogFileError(e) => {
-                write!(f, "Failed to create log file: {}", e)
-            }
-            TracingErrors::SetupTracingError(e) => write!(f, "Failed to setup tracing: {}", e),
-        }
-    }
-}
-
-impl Error for TracingErrors {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            TracingErrors::CreateDirError(e) => Some(e),
-            TracingErrors::CreateLogFileError(e) => Some(e),
-            TracingErrors::SetupTracingError(_) => None,
-        }
-    }
 }
