@@ -1,13 +1,13 @@
 mod args;
+mod server_error;
 
 use anyhow::{bail, Result};
 use args::Args;
 use clap::Parser;
-use shared::errors::MessageError;
+use server_error::ServerError;
 use shared::message::Message;
 use shared::tracing::{get_subscriber, init_subscriber};
-use std::io;
-use std::sync::mpsc::{self, SendError};
+use std::sync::mpsc::{self};
 use std::{
     collections::HashMap,
     net::{SocketAddr, TcpListener, TcpStream},
@@ -17,7 +17,6 @@ use std::{
     },
     thread,
 };
-use thiserror::Error;
 
 fn main() {
     let args = Args::parse();
@@ -166,24 +165,4 @@ fn remove_client(clients: &Arc<Mutex<HashMap<SocketAddr, TcpStream>>>, ip_addr: 
         .lock()
         .expect("Failed to lock clients map")
         .remove(ip_addr);
-}
-
-#[derive(Debug, Error)]
-enum ServerError {
-    #[error("Cannot set non-blocking tcp listener.")]
-    NonblockingListener,
-    #[error("Cannot bind to the address. {0}")]
-    BindError(#[source] io::Error),
-    #[error("Error from a broadcasting thread.")]
-    BroadcastThreadError,
-    #[error("Failed to get peer address: {0}")]
-    PeerAddressError(#[source] io::Error),
-    #[error("Failed to clone TCP stream: {0}")]
-    StreamCloneError(#[source] io::Error),
-    #[error("Failed to lock clients map")]
-    ClientsLockError,
-    #[error("Failed to send message: {0}")]
-    SendMessageError(#[source] MessageError),
-    #[error("Channel send error: {0}")]
-    ChannelSendError(#[source] SendError<(SocketAddr, Message)>),
 }
