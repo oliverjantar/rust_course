@@ -41,11 +41,7 @@ where
         None => return Err(ClientError::FileNotExists),
     };
 
-    let bytes = fs::read(path).map_err(|e| match e.kind() {
-        std::io::ErrorKind::NotFound => ClientError::FileNotExists,
-        std::io::ErrorKind::PermissionDenied => ClientError::FilePermissions,
-        _ => ClientError::ReadFromFile,
-    })?;
+    let bytes = fs::read(path).map_err(ClientError::ReadFromFile)?;
 
     Ok((file_name.to_string(), bytes))
 }
@@ -57,11 +53,7 @@ where
     let path = Path::new(path);
 
     let bytes = match path.ends_with(".png") {
-        true => fs::read(path).map_err(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => ClientError::FileNotExists,
-            std::io::ErrorKind::PermissionDenied => ClientError::FilePermissions,
-            _ => ClientError::ReadFromFile,
-        })?,
+        true => fs::read(path).map_err(ClientError::ReadFromFile)?,
         false => convert_to_png(path)?,
     };
     Ok(bytes)

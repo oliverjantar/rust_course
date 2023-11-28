@@ -1,12 +1,15 @@
 mod args;
 
+use anyhow::{bail, Result};
 use args::Args;
 use clap::Parser;
+use shared::errors::MessageError;
 use shared::message::Message;
 use shared::tracing::{get_subscriber, init_subscriber};
+use std::io;
+use std::sync::mpsc::{self, SendError};
 use std::{
     collections::HashMap,
-    error::Error,
     net::{SocketAddr, TcpListener, TcpStream},
     sync::{
         mpsc::{Receiver, Sender},
@@ -14,6 +17,7 @@ use std::{
     },
     thread,
 };
+use thiserror::Error;
 
 fn main() {
     let args = Args::parse();
@@ -21,27 +25,26 @@ fn main() {
     // Setup tracing, default output is stdout.
     let tracing_subscriber = get_subscriber("server".into(), "debug".into(), std::io::stdout);
     if let Err(e) = init_subscriber(tracing_subscriber) {
-        tracing::error!("Error while setting up server: {e}");
+        tracing::error!("Error while setting up server. {e}");
     }
 
     if let Err(e) = start(args) {
-        tracing::error!("Error while running server: {e}");
+        tracing::error!("Error while running server. {e}");
     }
 }
 
 /// Starts the server. It will listen for incoming connections and spawn a new thread for each connection.
 /// In a separate thread runs a broadcasting function that will send messages to all connected clients.
-fn start(args: Args) -> Result<(), Box<dyn Error>> {
+fn start(args: Args) -> Result<()> {
     let server = format!("{}:{}", args.host, args.port);
     tracing::info!("Starting server on address {server}...");
 
-    let listener = TcpListener::bind(server)?;
+    let listener = TcpListener::bind(server).map_err(ServerError::BindError)?;
 
-    listener
-        .set_nonblocking(true)
-        .expect("Cannot set non-blocking");
-
-    let (sender, receiver) = std::sync::mpsc::channel();
+    if listener.set_nonblocking(true).is_err() {
+        bail!(ServerError::NonblockingListener);
+    }
+    let (sender, receiver) = mpsc::channel();
 
     let clients: Arc<Mutex<HashMap<SocketAddr, TcpStream>>> = Arc::new(Mutex::new(HashMap::new()));
 
@@ -50,23 +53,40 @@ fn start(args: Args) -> Result<(), Box<dyn Error>> {
         || broadcast_messages(clients, receiver)
     });
 
+    #[allow(clippy::type_complexity)]
+    let (error_sender, error_receiver): (Sender<ServerError>, Receiver<ServerError>) =
+        mpsc::channel();
+
+    thread::spawn(move || {
+        for received_error in error_receiver {
+            tracing::error!("Error in connection handling: {}", received_error);
+        }
+    });
+
     for stream in listener.incoming() {
         match stream {
             Ok(s) => {
                 thread::spawn({
                     let sender = sender.clone();
                     let clients = clients.clone();
-                    move || handle_connection(s, sender, clients)
+                    let error_sender = error_sender.clone();
+                    move || {
+                        if let Err(e) = handle_connection(s, sender, clients) {
+                            let _ = error_sender.send(e);
+                        }
+                    }
                 });
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 continue;
             }
-            Err(e) => tracing::error!("encountered IO error: {e}"),
+            Err(e) => tracing::error!("Encountered network error from Tcp stream: {e}"),
         }
     }
 
-    _ = broadcast_handle.join();
+    if broadcast_handle.join().is_err() {
+        bail!(ServerError::BroadcastThreadError)
+    }
 
     Ok(())
 }
@@ -77,29 +97,32 @@ fn handle_connection(
     mut stream: TcpStream,
     sender: Sender<(SocketAddr, Message)>,
     clients: Arc<Mutex<HashMap<SocketAddr, TcpStream>>>,
-) -> Result<(), Box<dyn Error + Send + 'static>> {
-    let addr = stream.peer_addr().unwrap();
+) -> Result<(), ServerError> {
+    let addr = stream.peer_addr().map_err(ServerError::PeerAddressError)?;
+
     clients
         .lock()
-        .unwrap()
-        .insert(addr, stream.try_clone().unwrap());
+        .map_err(|_| ServerError::ClientsLockError)?
+        .insert(
+            addr,
+            stream.try_clone().map_err(ServerError::StreamCloneError)?,
+        );
 
     tracing::info!("New connection from: {addr}");
 
-    let clients_count = clients.lock().unwrap().len();
-    Message::send_active_users_msg(&mut stream, clients_count).unwrap_or_else(|e| {
-        tracing::error!("Unable to send message to a new connection, error: {e}");
-    });
+    let clients_count = clients
+        .lock()
+        .map_err(|_| ServerError::ClientsLockError)?
+        .len();
+
+    Message::send_active_users_msg(&mut stream, clients_count)
+        .map_err(ServerError::SendMessageError)?;
 
     while let Ok(message) = Message::receive_msg(&mut stream) {
         tracing::info!("New message from: {addr}");
-        if let Err(e) = sender.send((addr, message)) {
-            // If the channel is closed it means that the broadcasting thread has stopped. This means that something went wrong and messages cannot be sent to clients.
-            panic!(
-                "Error while sending message to channel: ip {}, error: {}",
-                addr, e
-            );
-        }
+        sender
+            .send((addr, message))
+            .map_err(ServerError::ChannelSendError)?;
     }
 
     // If the client disconnects we remove it from the list of connected clients.
@@ -114,7 +137,7 @@ fn broadcast_messages(
     receiver: Receiver<(SocketAddr, Message)>,
 ) {
     while let Ok((ip_addr, message)) = receiver.recv() {
-        let mut clients_iter = clients.lock().unwrap();
+        let mut clients_iter = clients.lock().expect("Failed to lock clients map");
 
         let clients_to_remove: Vec<SocketAddr> = clients_iter
             .iter_mut()
@@ -139,5 +162,28 @@ fn broadcast_messages(
 
 fn remove_client(clients: &Arc<Mutex<HashMap<SocketAddr, TcpStream>>>, ip_addr: &SocketAddr) {
     tracing::info!("Removing client from list {ip_addr}");
-    clients.lock().unwrap().remove(ip_addr);
+    clients
+        .lock()
+        .expect("Failed to lock clients map")
+        .remove(ip_addr);
+}
+
+#[derive(Debug, Error)]
+enum ServerError {
+    #[error("Cannot set non-blocking tcp listener.")]
+    NonblockingListener,
+    #[error("Cannot bind to the address. {0}")]
+    BindError(#[source] io::Error),
+    #[error("Error from a broadcasting thread.")]
+    BroadcastThreadError,
+    #[error("Failed to get peer address: {0}")]
+    PeerAddressError(#[source] io::Error),
+    #[error("Failed to clone TCP stream: {0}")]
+    StreamCloneError(#[source] io::Error),
+    #[error("Failed to lock clients map")]
+    ClientsLockError,
+    #[error("Failed to send message: {0}")]
+    SendMessageError(#[source] MessageError),
+    #[error("Channel send error: {0}")]
+    ChannelSendError(#[source] SendError<(SocketAddr, Message)>),
 }

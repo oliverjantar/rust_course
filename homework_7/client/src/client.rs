@@ -114,8 +114,8 @@ impl ClientSender {
             let mut data = match cmd.try_into() {
                 Ok(data) => data,
                 Err(e) => {
-                    tracing::error!("Cannot process command: {e}");
-                    eprintln!("Cannot process command: {e}");
+                    tracing::error!("Cannot process command. {e}");
+                    eprintln!("Cannot process command. {e}");
                     continue;
                 }
             };
@@ -169,8 +169,8 @@ where
                 self.enable_encryption,
                 &self.encryption_key,
             ) {
-                tracing::error!("Error while handling message: {e}");
-                eprintln!("Error while handling message: {e}");
+                tracing::error!("Error while handling message. {e}");
+                eprintln!("Error while handling message. {e}");
             }
         }
     }
