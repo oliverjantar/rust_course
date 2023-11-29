@@ -1,3 +1,4 @@
+use crate::errors::MessageError;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -5,8 +6,6 @@ use std::{
     io::{Read, Write},
     net::TcpStream,
 };
-
-use crate::errors::MessageError;
 
 /// Main message struct that wraps the data and other metadata fields.
 /// sender: the username of the sender

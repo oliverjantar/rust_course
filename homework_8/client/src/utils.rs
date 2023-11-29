@@ -1,7 +1,5 @@
-use crate::{client_error::ClientError, encryption};
-use base64::{engine::general_purpose, Engine};
+use crate::client_error::ClientError;
 use image::io::Reader as ImageReader;
-use shared::message::MessagePayload;
 use std::{
     ffi::OsStr,
     fs,
@@ -82,39 +80,4 @@ where
     writer.write_all(buf).map_err(ClientError::Write)?;
     writer.flush().map_err(ClientError::Write)?;
     Ok(())
-}
-
-pub fn encrypt_payload(data: MessagePayload, key: &[u8]) -> Result<MessagePayload, ClientError> {
-    if let MessagePayload::Text(text) = data {
-        let (encrypted_msg, nonce) = encryption::encrypt(key, text.as_bytes())?;
-
-        let mut message_to_send = nonce;
-        message_to_send.extend_from_slice(&encrypted_msg);
-        let encoded = general_purpose::STANDARD.encode(&message_to_send);
-        Ok(MessagePayload::Text(encoded))
-    } else {
-        Ok(data)
-    }
-}
-
-pub fn decrypt_payload(
-    data: MessagePayload,
-    encryption_key: &[u8],
-) -> Result<MessagePayload, ClientError> {
-    if let MessagePayload::Text(text) = data {
-        let decoded = general_purpose::STANDARD
-            .decode(text.as_bytes())
-            .map_err(|_| {
-                ClientError::DecryptMessage(Some(
-                    "Error while decoding message from base64".to_string(),
-                ))
-            })?;
-        let nonce = &decoded[..encryption::NONCE_SIZE];
-        let encrypted_msg = &decoded[encryption::NONCE_SIZE..];
-        let decrypted = encryption::decrypt(encryption_key, nonce, encrypted_msg)?;
-        let text = String::from_utf8(decrypted).map_err(|_| ClientError::DecryptMessage(None))?;
-        Ok(MessagePayload::Text(text))
-    } else {
-        Ok(data)
-    }
 }

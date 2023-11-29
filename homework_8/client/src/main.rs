@@ -10,11 +10,11 @@ use args::Args;
 use clap::Parser;
 use client::Client;
 use shared::tracing::{create_log_file, get_subscriber, init_subscriber};
-
 use std::io::Write;
 use std::thread;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Args::parse();
     if let Err(e) = setup_tracing(&args.logs_dir) {
         let msg = "Error while starting a chat client.";
@@ -24,7 +24,7 @@ fn main() {
 
     let output_writer = std::io::stdout();
 
-    if let Err(e) = start(args, output_writer) {
+    if let Err(e) = start(args, output_writer).await {
         let msg = "Error while running client.";
         log_error(msg, e);
     }
@@ -44,7 +44,7 @@ fn setup_tracing(logs_dir: &str) -> Result<()> {
 /// Starts the client. It will connect to the server and start listening for commands.
 /// Receiving messages will be handled in a separate thread.
 #[tracing::instrument(name = "Starting client", skip(writer))]
-fn start<T>(args: Args, writer: T) -> Result<()>
+async fn start<T>(args: Args, writer: T) -> Result<()>
 where
     T: Write + Send + 'static,
 {
@@ -54,9 +54,8 @@ where
         args.port,
         &args.output_dir,
         &args.username,
-        args.enable_encryption,
-        &args.encryption_key,
-    )?;
+    )
+    .await?;
 
     let _ = thread::spawn(|| client_receiver.start());
 

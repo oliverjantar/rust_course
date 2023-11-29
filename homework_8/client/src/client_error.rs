@@ -1,6 +1,6 @@
 use std::io;
-
 use thiserror::Error;
+
 #[derive(Debug, Error)]
 pub enum ClientError {
     #[error("Failed to write to output: {0}")]
