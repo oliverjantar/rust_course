@@ -14,18 +14,30 @@ pub enum Command {
     Quit,
 }
 
+impl Command {
+    pub async fn into_message(self) -> Result<MessagePayload, ClientError> {
+        match self {
+            Command::Text(text) => Ok(MessagePayload::Text(text.to_owned())),
+            Command::File(path) => get_file_message(&path).await,
+            Command::Image(path) => get_image_message(&path).await,
+            Command::Quit => Err(ClientError::InvalidCommand),
+        }
+    }
+}
+/*
 impl TryFrom<Command> for MessagePayload {
     type Error = ClientError;
 
     fn try_from(value: Command) -> Result<Self, Self::Error> {
         match value {
             Command::Text(text) => Ok(MessagePayload::Text(text.to_owned())),
-            Command::File(path) => get_file_message(&path),
-            Command::Image(path) => get_image_message(&path),
+            Command::File(path) => get_file_message(&path).await,
+            Command::Image(path) => get_image_message(&path).await,
             Command::Quit => Err(ClientError::InvalidCommand),
         }
     }
 }
+*/
 
 impl FromStr for Command {
     type Err = ClientError;
@@ -44,12 +56,12 @@ impl FromStr for Command {
     }
 }
 
-fn get_file_message(path: &str) -> Result<MessagePayload, ClientError> {
-    let (name, data) = get_file(path)?;
+async fn get_file_message(path: &str) -> Result<MessagePayload, ClientError> {
+    let (name, data) = get_file(path).await?;
     Ok(MessagePayload::File(name, data))
 }
 
-fn get_image_message(path: &str) -> Result<MessagePayload, ClientError> {
-    let data = get_image(path)?;
+async fn get_image_message(path: &str) -> Result<MessagePayload, ClientError> {
+    let data = get_image(path).await?;
     Ok(MessagePayload::Image(data))
 }

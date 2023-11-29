@@ -1,12 +1,9 @@
 use crate::errors::MessageError;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::{
-    fmt::Display,
-    io::{Read, Write},
-    net::TcpStream,
-};
-
+use std::fmt::Display;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::net::TcpStream;
 /// Main message struct that wraps the data and other metadata fields.
 /// sender: the username of the sender
 /// timestamp: when msg was created, not used at the moment but it will be useful for the frontend
@@ -49,26 +46,35 @@ impl Message {
 
     /// Sends the message to the given stream.
     #[tracing::instrument(name = "Sending message", skip(message, stream))]
-    pub fn send_msg(message: &Message, stream: &mut TcpStream) -> Result<(), MessageError> {
+    pub async fn send_msg<T>(message: &Message, stream: &mut T) -> Result<(), MessageError>
+    where
+        T: AsyncWrite + Unpin,
+    {
         let serialized = Message::serialize(message)?;
         let length = serialized.len() as u32;
 
         _ = stream
             .write(&length.to_be_bytes())
+            .await
             .map_err(MessageError::SendError)?;
 
         stream
             .write_all(&serialized)
+            .await
             .map_err(MessageError::SendError)?;
 
         Ok(())
     }
 
     /// Receives a message from the given stream.
-    pub fn receive_msg(stream: &mut TcpStream) -> Result<Message, MessageError> {
+    pub async fn receive_msg<T>(stream: &mut T) -> Result<Message, MessageError>
+    where
+        T: AsyncRead + Unpin,
+    {
         let mut len_bytes = [0u8; 4];
         stream
             .read_exact(&mut len_bytes)
+            .await
             .map_err(MessageError::RecieveError)?;
 
         let len = u32::from_be_bytes(len_bytes) as usize;
@@ -77,6 +83,7 @@ impl Message {
 
         stream
             .read_exact(&mut buffer)
+            .await
             .map_err(MessageError::RecieveError)?;
 
         let message = Message::deserialize(&buffer)?;
@@ -84,18 +91,21 @@ impl Message {
         Ok(message)
     }
 
-    pub fn send_active_users_msg(
+    pub async fn send_active_users_msg(
         stream: &mut TcpStream,
         active_users: usize,
     ) -> Result<(), MessageError> {
         let msg = Self::new_server_msg(&format!("Active users: {}", active_users - 1));
-        Message::send_msg(&msg, stream)?;
+        Message::send_msg(&msg, stream).await?;
         Ok(())
     }
 
-    pub fn send_new_user_msg(stream: &mut TcpStream, username: &str) -> Result<(), MessageError> {
+    pub async fn send_new_user_msg<T>(stream: &mut T, username: &str) -> Result<(), MessageError>
+    where
+        T: AsyncWrite + Unpin,
+    {
         let msg = Self::new_server_msg(&format!("New user connected: {}", username));
-        Message::send_msg(&msg, stream)?;
+        Message::send_msg(&msg, stream).await?;
         Ok(())
     }
 }

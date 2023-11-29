@@ -10,8 +10,7 @@ use args::Args;
 use clap::Parser;
 use client::Client;
 use shared::tracing::{create_log_file, get_subscriber, init_subscriber};
-use std::io::Write;
-use std::thread;
+use tokio::io::AsyncWrite;
 
 #[tokio::main]
 async fn main() {
@@ -22,7 +21,7 @@ async fn main() {
         return;
     }
 
-    let output_writer = std::io::stdout();
+    let output_writer = tokio::io::stdout();
 
     if let Err(e) = start(args, output_writer).await {
         let msg = "Error while running client.";
@@ -46,7 +45,7 @@ fn setup_tracing(logs_dir: &str) -> Result<()> {
 #[tracing::instrument(name = "Starting client", skip(writer))]
 async fn start<T>(args: Args, writer: T) -> Result<()>
 where
-    T: Write + Send + 'static,
+    T: AsyncWrite + Unpin + Send + 'static,
 {
     let (client_sender, client_receiver) = Client::connect(
         writer,
@@ -57,9 +56,9 @@ where
     )
     .await?;
 
-    let _ = thread::spawn(|| client_receiver.start());
+    let _ = tokio::spawn(async { client_receiver.start().await });
 
-    client_sender.start()?;
+    client_sender.start().await?;
 
     Ok(())
 }
