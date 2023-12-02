@@ -45,7 +45,6 @@ impl Client {
 
         let stream = TcpStream::connect(server).await?;
         let (read_half, mut write_half) = stream.into_split();
-        // stream.set_nodelay(true)?;
 
         // Once the connection is established, send the username to the server. It is then broadcasted to all clients.
         Message::send_new_user_msg(&mut write_half, username).await?;
@@ -81,7 +80,7 @@ where
     pub async fn start(mut self) -> Result<()> {
         loop {
             let mut text = String::new();
-
+            // tokio::io::AsyncReadExt::read_lin
             std::io::stdin().read_line(&mut text)?;
 
             let cmd = Command::from_str(text.trim())?;
@@ -126,14 +125,20 @@ where
         }
     }
 
-    pub async fn start(mut self) {
+    pub async fn start(mut self) -> Result<()> {
+        tracing::debug!("starting receiver");
+
         while let Ok(message) = Message::receive_msg(&mut self.stream).await {
+            tracing::debug!("received msg");
             if let Err(e) = Self::handle_message(message, &mut self.writer, &self.output_dir).await
             {
                 tracing::error!("Error while handling message. {e}");
                 eprintln!("Error while handling message. {e}");
             }
         }
+        tracing::debug!("receiver end");
+
+        Ok(())
     }
 
     /// Handles the received message. It writes it to the writer and stores the data if it is an image or a file.

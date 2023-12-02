@@ -2,11 +2,11 @@ use crate::client_error::ClientError;
 use image::io::Reader as ImageReader;
 use std::{
     ffi::OsStr,
-    io::{Cursor, Write},
+    io::Cursor,
     path::{self, Path},
 };
-use tokio::fs::{self, File};
-use tokio::io::{AsyncBufReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::fs::{self};
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 /// Utility functions that are relevant only to client.
 

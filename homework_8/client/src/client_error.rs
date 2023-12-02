@@ -5,8 +5,6 @@ use thiserror::Error;
 pub enum ClientError {
     #[error("Failed to write to output: {0}")]
     Write(#[source] std::io::Error),
-    #[error("Failed to parse command. {0}")]
-    CommandParse(String),
     #[error("Failed to encrypt message")]
     EncryptMessage,
     #[error("Failed to decrypt message. {}",.0.as_deref().unwrap_or("No additional info"))]

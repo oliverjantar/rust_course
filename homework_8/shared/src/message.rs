@@ -3,7 +3,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::net::TcpStream;
+
 /// Main message struct that wraps the data and other metadata fields.
 /// sender: the username of the sender
 /// timestamp: when msg was created, not used at the moment but it will be useful for the frontend
@@ -62,7 +62,6 @@ impl Message {
             .write_all(&serialized)
             .await
             .map_err(MessageError::SendError)?;
-
         Ok(())
     }
 
@@ -91,11 +90,14 @@ impl Message {
         Ok(message)
     }
 
-    pub async fn send_active_users_msg(
-        stream: &mut TcpStream,
+    pub async fn send_active_users_msg<T>(
+        stream: &mut T,
         active_users: usize,
-    ) -> Result<(), MessageError> {
-        let msg = Self::new_server_msg(&format!("Active users: {}", active_users - 1));
+    ) -> Result<(), MessageError>
+    where
+        T: AsyncWrite + Unpin,
+    {
+        let msg = Self::new_server_msg(&format!("Active users: {}", active_users));
         Message::send_msg(&msg, stream).await?;
         Ok(())
     }

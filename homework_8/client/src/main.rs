@@ -56,10 +56,10 @@ where
     )
     .await?;
 
-    let _ = tokio::spawn(async { client_receiver.start().await });
+    let handle = tokio::spawn(client_sender.start());
+    let handle_receiver = tokio::spawn(client_receiver.start());
 
-    client_sender.start().await?;
-
+    let _ = tokio::try_join!(handle, handle_receiver);
     Ok(())
 }
 

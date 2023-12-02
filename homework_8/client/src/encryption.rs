@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+#![deny(missing_docs)]
 use crate::client_error::ClientError;
 use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
@@ -6,6 +7,8 @@ use aes_gcm::{
 };
 use base64::{engine::general_purpose, Engine};
 use shared::message::MessagePayload;
+
+/// Provides encryption and decryption functions
 
 pub const NONCE_SIZE: usize = 12;
 
