@@ -36,7 +36,7 @@ impl Message {
         }
     }
 
-    pub fn set_sender(&mut self, sender: &str) {
+    pub fn set_from_user(&mut self, sender: &str) {
         self.sender = Some(sender.to_owned())
     }
 

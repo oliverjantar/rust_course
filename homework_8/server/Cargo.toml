@@ -11,7 +11,7 @@ base64 = "0.21.5"
 chrono = "0.4.31"
 clap = { version = "4.4.7", features = ["derive"] }
 config = "0.13.4"
-flume = "0.11.0"
+flume = { version = "0.11.0", features = ["async"] }
 futures = "0.3.29"
 rand = "0.8.5"
 ring = "0.17.6"

@@ -104,7 +104,8 @@ async fn handle_connection(
     // Broadcast to other users that new user was connected
     let msg = Message::new_server_msg(&format!("New user connected: {}", current_user_name));
     sender
-        .send((address, msg))
+        .send_async((address, msg))
+        .await
         .map_err(ServerError::ChannelSend)?;
 
     // Start receiving messages from user and broadcast them
@@ -115,10 +116,11 @@ async fn handle_connection(
             .await
             .map_err(ServerError::StoreMessage)?;
 
-        message.set_sender(&current_user_name);
+        message.set_from_user(&current_user_name);
 
         sender
-            .send((address, message))
+            .send_async((address, message))
+            .await
             .map_err(ServerError::ChannelSend)?;
     }
 
@@ -133,7 +135,9 @@ async fn broadcast_messages(
     clients: Arc<Mutex<HashMap<SocketAddr, OwnedWriteHalf>>>,
     receiver: Receiver<(SocketAddr, Message)>,
 ) {
-    while let Ok((ip_addr, ref message)) = receiver.recv() {
+    let mut recv_stream = receiver.into_stream();
+
+    while let Some((ip_addr, ref message)) = recv_stream.next().await {
         let mut clients_iter = clients.lock().await;
 
         let clients_to_remove: Vec<SocketAddr> = stream::iter(
