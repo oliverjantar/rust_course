@@ -113,7 +113,6 @@ where
     pub async fn start(mut self) -> Result<()> {
         loop {
             let mut text = String::new();
-            // tokio::io::AsyncReadExt::read_lin
             std::io::stdin().read_line(&mut text)?;
 
             let cmd = Command::from_str(text.trim())?;

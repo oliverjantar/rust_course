@@ -1,4 +1,3 @@
-mod args;
 mod configuration;
 mod server_error;
 
