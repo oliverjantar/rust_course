@@ -206,7 +206,7 @@ impl AuthPayload {
     pub fn new_register() -> Self {
         Self {
             is_ok: true,
-            message: Some(AuthMessage::LoginSuccessful),
+            message: Some(AuthMessage::UserRegistered),
             err: None,
         }
     }
