@@ -3,16 +3,20 @@ mod configuration;
 mod server_error;
 
 use anyhow::Result;
+use base64::{engine::general_purpose, Engine};
 use chrono::Utc;
 use configuration::{get_configuration, DatabaseSettings, Settings};
 use flume::{Receiver, Sender};
 use futures::stream::{self, StreamExt};
+use rand::{SecureRandom, SystemRandom};
+use ring::{digest, pbkdf2, rand};
 use secrecy::{ExposeSecret, Secret};
 use server_error::ServerError;
 use shared::message::{AuthPayload, Message, MessagePayload};
 use shared::tracing::{get_subscriber, init_subscriber};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Pool, Postgres};
+use std::num::NonZeroU32;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpListener, TcpStream};
@@ -42,8 +46,6 @@ async fn start(config: Settings) -> Result<()> {
 
     let pool = Arc::new(connection_pool);
 
-    // let port = listener.local_addr().unwrap().port();
-
     let server = format!("{}:{}", config.application.host, config.application.port);
     tracing::info!("Starting server on address {server}...");
 
@@ -54,7 +56,7 @@ async fn start(config: Settings) -> Result<()> {
     let clients: Arc<Mutex<HashMap<SocketAddr, OwnedWriteHalf>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
-    let _broadcast_handle = tokio::spawn({
+    tokio::spawn({
         let clients = clients.clone();
         broadcast_messages(clients, receiver)
     });
@@ -68,7 +70,7 @@ async fn start(config: Settings) -> Result<()> {
                 tokio::spawn(async move {
                     if let Err(e) = handle_connection(stream, address, sender, clients, pool).await
                     {
-                        tracing::error!("Error in connection handling: {}", e);
+                        tracing::error!("Error while handling connection: {}", e);
                     }
                 });
             }
@@ -80,85 +82,18 @@ async fn start(config: Settings) -> Result<()> {
 /// Handles a connection from a client.
 /// In a loop it will listen for incoming messages and send them to the broadcasting thread using chanel.
 async fn handle_connection(
-    stream: TcpStream,
+    mut stream: TcpStream,
     address: SocketAddr,
     sender: Sender<(SocketAddr, Message)>,
     clients: Arc<Mutex<HashMap<SocketAddr, OwnedWriteHalf>>>,
     db_pool: Arc<Pool<Postgres>>,
 ) -> Result<(), ServerError> {
-    let (mut read_half, mut write_half) = stream.into_split();
-
     tracing::info!("New connection from: {address}. Authenticating...");
-    let current_user_id: Uuid;
-    let current_user_name: String;
-
-    loop {
-        let msg = match Message::receive_msg(&mut read_half).await {
-            Ok(msg) => msg,
-            Err(_) => continue,
-        };
-
-        if let MessagePayload::Login(user) = msg.data {
-            tracing::debug!("Received log in message from user.");
-            match get_user(&db_pool, &user.name).await {
-                Ok(user_db) => {
-                    if user_db.password.expose_secret() == &user.password {
-                        tracing::debug!("Log in was successful.");
-                        current_user_id = user_db.id;
-                        current_user_name = user_db.username;
-                        let payload = MessagePayload::LoginResponse(AuthPayload::new_login());
-
-                        let msg = Message::new(payload);
-                        Message::send_msg(&msg, &mut write_half)
-                            .await
-                            .map_err(ServerError::SendMessage)?;
-
-                        break;
-                    } else {
-                        tracing::debug!("Incorrect password.");
-
-                        let payload = MessagePayload::LoginResponse(AuthPayload::new_error());
-
-                        let msg = Message::new(payload);
-                        Message::send_msg(&msg, &mut write_half)
-                            .await
-                            .map_err(ServerError::SendMessage)?;
-                        continue;
-                    }
-                }
-                Err(err) => match err {
-                    sqlx::Error::RowNotFound => {
-                        tracing::debug!("Registering new user.");
-                        current_user_id = Uuid::new_v4();
-                        current_user_name = user.name;
-
-                        insert_user(
-                            &db_pool,
-                            current_user_id,
-                            &user.password,
-                            &current_user_name,
-                            "salt",
-                        )
-                        .await
-                        .map_err(ServerError::StoreUser)?;
-                        let payload = MessagePayload::LoginResponse(AuthPayload::new_register());
-
-                        let msg = Message::new(payload);
-                        Message::send_msg(&msg, &mut write_half)
-                            .await
-                            .map_err(ServerError::SendMessage)?;
-                        break;
-                    }
-                    _ => {
-                        tracing::error!("Error while storing user to database. {err}");
-                        continue;
-                    }
-                },
-            }
-        }
-    }
+    let (current_user_id, current_user_name) = authenticate_user(&mut stream, &db_pool).await?;
 
     let clients_count = clients.lock().await.len();
+
+    let (mut read_half, mut write_half) = stream.into_split();
 
     Message::send_active_users_msg(&mut write_half, clients_count)
         .await
@@ -235,7 +170,7 @@ async fn remove_client(
     clients.lock().await.remove(ip_addr);
 }
 
-pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
+fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
     PgPoolOptions::new()
         .acquire_timeout(std::time::Duration::from_secs(2))
         .connect_lazy_with(configuration.with_db())
@@ -318,4 +253,112 @@ struct User {
     password: Secret<String>,
     username: String,
     salt: String,
+}
+
+const CREDENTIAL_LEN: usize = digest::SHA512_OUTPUT_LEN;
+const N_ITER: Option<NonZeroU32> = NonZeroU32::new(100_000);
+
+async fn authenticate_user(
+    mut stream: &mut TcpStream,
+    db_pool: &PgPool,
+) -> Result<(Uuid, String), ServerError> {
+    loop {
+        // wait for username and password from client
+        let msg = match Message::receive_msg(stream).await {
+            Ok(msg) => msg,
+            Err(_) => continue,
+        };
+
+        if let MessagePayload::Login(user) = msg.data {
+            tracing::debug!("Received log in message from user.");
+            match get_user(db_pool, &user.name).await {
+                Ok(user_db) => {
+                    let decoded_salt = general_purpose::STANDARD
+                        .decode(user_db.salt.as_bytes())
+                        .map_err(|_| ServerError::PasswordDecode)?;
+
+                    let decoded_pwd = general_purpose::STANDARD
+                        .decode(user_db.password.expose_secret().as_bytes())
+                        .map_err(|_| ServerError::PasswordDecode)?;
+
+                    if verify_pwd(&decoded_pwd, &decoded_salt, user.password.as_bytes()) {
+                        tracing::debug!("Log in was successful.");
+
+                        let payload = MessagePayload::LoginResponse(AuthPayload::new_login());
+
+                        let msg = Message::new(payload);
+                        Message::send_msg(&msg, stream)
+                            .await
+                            .map_err(ServerError::SendMessage)?;
+
+                        return Ok((user_db.id, user_db.username));
+                    } else {
+                        tracing::debug!("Incorrect password.");
+
+                        let payload = MessagePayload::LoginResponse(AuthPayload::new_error());
+
+                        let msg = Message::new(payload);
+                        Message::send_msg(&msg, stream)
+                            .await
+                            .map_err(ServerError::SendMessage)?;
+                        continue;
+                    }
+                }
+                Err(err) => match err {
+                    // If user does not exist, create one
+                    sqlx::Error::RowNotFound => {
+                        tracing::debug!("Registering new user.");
+
+                        let user_id = Uuid::new_v4();
+                        let user_name = user.name;
+
+                        // hash password
+                        let mut salt = [0u8; CREDENTIAL_LEN];
+                        let rng = SystemRandom::new();
+
+                        rng.fill(&mut salt).unwrap();
+
+                        let mut pwd_hash = [0u8; CREDENTIAL_LEN];
+                        pbkdf2::derive(
+                            pbkdf2::PBKDF2_HMAC_SHA512,
+                            N_ITER.unwrap(),
+                            &salt,
+                            user.password.as_bytes(),
+                            &mut pwd_hash,
+                        );
+
+                        let encoded_pwd = general_purpose::STANDARD.encode(pwd_hash);
+                        let encoded_salt = general_purpose::STANDARD.encode(salt);
+
+                        insert_user(db_pool, user_id, &encoded_pwd, &user_name, &encoded_salt)
+                            .await
+                            .map_err(ServerError::StoreUser)?;
+                        let payload = MessagePayload::LoginResponse(AuthPayload::new_register());
+
+                        let msg = Message::new(payload);
+                        Message::send_msg(&msg, &mut stream)
+                            .await
+                            .map_err(ServerError::SendMessage)?;
+
+                        return Ok((user_id, user_name));
+                    }
+                    _ => {
+                        tracing::error!("Error while storing user to database. {err}");
+                        continue;
+                    }
+                },
+            }
+        }
+    }
+}
+
+fn verify_pwd(secret: &[u8], salt: &[u8], password_to_verify: &[u8]) -> bool {
+    pbkdf2::verify(
+        pbkdf2::PBKDF2_HMAC_SHA512,
+        N_ITER.unwrap(),
+        salt,
+        password_to_verify,
+        secret,
+    )
+    .is_ok()
 }

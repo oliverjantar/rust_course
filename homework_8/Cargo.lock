@@ -1811,11 +1811,13 @@ name = "server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.21.5",
  "chrono",
  "clap",
  "config",
  "flume",
  "futures",
+ "rand",
  "ring",
  "secrecy",
  "serde",

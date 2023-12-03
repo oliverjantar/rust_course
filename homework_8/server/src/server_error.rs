@@ -15,4 +15,6 @@ pub enum ServerError {
     StoreMessage(#[source] sqlx::Error),
     #[error("Failed to store user: {0}")]
     StoreUser(#[source] sqlx::Error),
+    #[error("Failed to decode password")]
+    PasswordDecode,
 }
