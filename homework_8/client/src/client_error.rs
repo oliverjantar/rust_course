@@ -25,4 +25,6 @@ pub enum ClientError {
     OpenImage(#[source] io::Error),
     #[error("Invalid command to transfrom into Message")]
     InvalidCommand,
+    #[error("Login failed")]
+    LoginFailed,
 }

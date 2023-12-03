@@ -11,4 +11,8 @@ pub enum ServerError {
     SendMessage(#[source] MessageError),
     #[error("Channel send error: {0}")]
     ChannelSend(#[source] SendError<(SocketAddr, Message)>),
+    #[error("Failed to store message: {0}")]
+    StoreMessage(#[source] sqlx::Error),
+    #[error("Failed to store user: {0}")]
+    StoreUser(#[source] sqlx::Error),
 }

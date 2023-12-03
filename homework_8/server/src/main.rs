@@ -1,37 +1,50 @@
 mod args;
+mod configuration;
 mod server_error;
 
 use anyhow::Result;
-use args::Args;
-use clap::Parser;
+use chrono::Utc;
+use configuration::{get_configuration, DatabaseSettings, Settings};
 use flume::{Receiver, Sender};
 use futures::stream::{self, StreamExt};
+use secrecy::{ExposeSecret, Secret};
 use server_error::ServerError;
-use shared::message::Message;
+use shared::message::{AuthPayload, Message, MessagePayload};
 use shared::tracing::{get_subscriber, init_subscriber};
+use sqlx::postgres::PgPoolOptions;
+use sqlx::{PgPool, Pool, Postgres};
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
+use uuid::Uuid;
+
 #[tokio::main]
 async fn main() {
-    let args = Args::parse();
-
     // Setup tracing, default output is stdout.
     let tracing_subscriber = get_subscriber("server".into(), "debug".into(), std::io::stdout);
     if let Err(e) = init_subscriber(tracing_subscriber) {
         tracing::error!("Error while setting up server. {e}");
+        return;
     }
 
-    if let Err(e) = start(args).await {
+    let configuration = get_configuration().expect("Failed to read configuration.");
+
+    if let Err(e) = start(configuration).await {
         tracing::error!("Error while running server. {e}");
     }
 }
 
 /// Starts the server. It will listen for incoming connections and spawn a new thread for each connection.
 /// In a separate thread runs a broadcasting function that will send messages to all connected clients.
-async fn start(args: Args) -> Result<()> {
-    let server = format!("{}:{}", args.host, args.port);
+async fn start(config: Settings) -> Result<()> {
+    let connection_pool = get_connection_pool(&config.database);
+
+    let pool = Arc::new(connection_pool);
+
+    // let port = listener.local_addr().unwrap().port();
+
+    let server = format!("{}:{}", config.application.host, config.application.port);
     tracing::info!("Starting server on address {server}...");
 
     let listener = TcpListener::bind(server).await.map_err(ServerError::Bind)?;
@@ -50,10 +63,11 @@ async fn start(args: Args) -> Result<()> {
         match listener.accept().await {
             Ok((stream, address)) => {
                 let sender = sender.clone();
-                let clients = clients.clone();
-
+                let clients = Arc::clone(&clients);
+                let pool = Arc::clone(&pool);
                 tokio::spawn(async move {
-                    if let Err(e) = handle_connection(stream, address, sender, clients).await {
+                    if let Err(e) = handle_connection(stream, address, sender, clients, pool).await
+                    {
                         tracing::error!("Error in connection handling: {}", e);
                     }
                 });
@@ -70,10 +84,79 @@ async fn handle_connection(
     address: SocketAddr,
     sender: Sender<(SocketAddr, Message)>,
     clients: Arc<Mutex<HashMap<SocketAddr, OwnedWriteHalf>>>,
+    db_pool: Arc<Pool<Postgres>>,
 ) -> Result<(), ServerError> {
     let (mut read_half, mut write_half) = stream.into_split();
 
-    tracing::info!("New connection from: {address}");
+    tracing::info!("New connection from: {address}. Authenticating...");
+    let current_user_id: Uuid;
+    let current_user_name: String;
+
+    loop {
+        let msg = match Message::receive_msg(&mut read_half).await {
+            Ok(msg) => msg,
+            Err(_) => continue,
+        };
+
+        if let MessagePayload::Login(user) = msg.data {
+            tracing::debug!("Received log in message from user.");
+            match get_user(&db_pool, &user.name).await {
+                Ok(user_db) => {
+                    if user_db.password.expose_secret() == &user.password {
+                        tracing::debug!("Log in was successful.");
+                        current_user_id = user_db.id;
+                        current_user_name = user_db.username;
+                        let payload = MessagePayload::LoginResponse(AuthPayload::new_login());
+
+                        let msg = Message::new(payload);
+                        Message::send_msg(&msg, &mut write_half)
+                            .await
+                            .map_err(ServerError::SendMessage)?;
+
+                        break;
+                    } else {
+                        tracing::debug!("Incorrect password.");
+
+                        let payload = MessagePayload::LoginResponse(AuthPayload::new_error());
+
+                        let msg = Message::new(payload);
+                        Message::send_msg(&msg, &mut write_half)
+                            .await
+                            .map_err(ServerError::SendMessage)?;
+                        continue;
+                    }
+                }
+                Err(err) => match err {
+                    sqlx::Error::RowNotFound => {
+                        tracing::debug!("Registering new user.");
+                        current_user_id = Uuid::new_v4();
+                        current_user_name = user.name;
+
+                        insert_user(
+                            &db_pool,
+                            current_user_id,
+                            &user.password,
+                            &current_user_name,
+                            "salt",
+                        )
+                        .await
+                        .map_err(ServerError::StoreUser)?;
+                        let payload = MessagePayload::LoginResponse(AuthPayload::new_register());
+
+                        let msg = Message::new(payload);
+                        Message::send_msg(&msg, &mut write_half)
+                            .await
+                            .map_err(ServerError::SendMessage)?;
+                        break;
+                    }
+                    _ => {
+                        tracing::error!("Error while storing user to database. {err}");
+                        continue;
+                    }
+                },
+            }
+        }
+    }
 
     let clients_count = clients.lock().await.len();
 
@@ -83,14 +166,28 @@ async fn handle_connection(
 
     clients.lock().await.insert(address, write_half);
 
-    while let Ok(message) = Message::receive_msg(&mut read_half).await {
+    // Broadcast to other users that new user was connected
+    let msg = Message::new_server_msg(&format!("New user connected: {}", current_user_name));
+    sender
+        .send((address, msg))
+        .map_err(ServerError::ChannelSend)?;
+
+    // Start receiving messages from user and broadcast them
+    while let Ok(mut message) = Message::receive_msg(&mut read_half).await {
         tracing::info!("New message from: {address}");
+
+        insert_message(&db_pool, &message, &current_user_id)
+            .await
+            .map_err(ServerError::StoreMessage)?;
+
+        message.set_sender(&current_user_name);
+
         sender
             .send((address, message))
             .map_err(ServerError::ChannelSend)?;
     }
 
-    // If the client disconnects we remove it from the list of connected clients.
+    // If the user disconnects, we remove it from the list of connected clients.
     remove_client(&clients, &address).await;
     Ok(())
 }
@@ -136,4 +233,89 @@ async fn remove_client(
 ) {
     tracing::info!("Removing client from list {ip_addr}");
     clients.lock().await.remove(ip_addr);
+}
+
+pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
+    PgPoolOptions::new()
+        .acquire_timeout(std::time::Duration::from_secs(2))
+        .connect_lazy_with(configuration.with_db())
+}
+
+#[tracing::instrument(skip(db_pool, message))]
+async fn insert_message(
+    db_pool: &PgPool,
+    message: &Message,
+    user_id: &Uuid,
+) -> Result<(), sqlx::Error> {
+    let data = shared::message::MessagePayload::serialize_to_text(&message.data);
+    sqlx::query!(
+        r#"
+        INSERT INTO messages(id,user_id,data,timestamp)
+        VALUES ($1,$2,$3,$4)
+        "#,
+        Uuid::new_v4(),
+        user_id,
+        &data,
+        Utc::now(),
+    )
+    .execute(db_pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to execute query: {:?}", e);
+        e
+    })?;
+    Ok(())
+}
+
+#[tracing::instrument(skip(db_pool, pwd, salt))]
+async fn insert_user(
+    db_pool: &PgPool,
+    user_id: Uuid,
+    pwd: &str,
+    username: &str,
+    salt: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"
+        INSERT INTO users(id,password,username,salt,last_login)
+        VALUES ($1,$2,$3,$4,$5)
+        "#,
+        user_id,
+        pwd,
+        username,
+        salt,
+        Utc::now(),
+    )
+    .execute(db_pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to execute query: {:?}", e);
+        e
+    })?;
+    Ok(())
+}
+
+#[tracing::instrument(skip(db_pool))]
+async fn get_user(db_pool: &PgPool, username: &str) -> Result<User, sqlx::Error> {
+    let user = sqlx::query_as!(
+        User,
+        "SELECT id, password, username, salt FROM users WHERE username = $1",
+        username
+    )
+    .fetch_one(db_pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to execute query: {:?}", e);
+        e
+    })?;
+
+    Ok(user)
+}
+
+#[derive(Debug)]
+struct User {
+    id: Uuid,
+    password: Secret<String>,
+    username: String,
+    salt: String,
 }

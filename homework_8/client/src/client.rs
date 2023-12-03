@@ -5,7 +5,7 @@ use crate::{
 };
 use anyhow::Result;
 use chrono::Utc;
-use shared::message::{Message, MessagePayload};
+use shared::message::{AuthUser, Message, MessagePayload};
 use std::{net::Ipv4Addr, str::FromStr};
 use tokio::io::AsyncWrite;
 use tokio::{
@@ -27,7 +27,6 @@ impl Client {
         host: Ipv4Addr,
         port: u32,
         output_dir: &str,
-        username: &str,
     ) -> Result<(
         ClientSender<OwnedWriteHalf>,
         ClientReceiver<OwnedReadHalf, T>,
@@ -43,19 +42,54 @@ impl Client {
         )
         .await?;
 
-        let stream = TcpStream::connect(server).await?;
-        let (read_half, mut write_half) = stream.into_split();
+        let mut stream = TcpStream::connect(server).await?;
 
-        // Once the connection is established, send the username to the server. It is then broadcasted to all clients.
-        Message::send_new_user_msg(&mut write_half, username).await?;
+        while Self::authenticate(&mut writer, &mut stream).await.is_err() {
+            write_to_output(&mut writer, b"Please try to log in again.\n").await?;
+        }
+
+        let (read_half, write_half) = stream.into_split();
 
         write_to_output(&mut writer, b"Connected. You can now send messages.\n").await?;
 
         // Create both ends of the client. I split it to two structs to make it easier to test.
         let receiver = ClientReceiver::new(read_half, writer, output_dir);
-        let sender = ClientSender::new(write_half, username.to_owned());
+        let sender = ClientSender::new(write_half);
 
         Ok((sender, receiver))
+    }
+
+    async fn authenticate<T>(mut writer: T, stream: &mut TcpStream) -> Result<()>
+    where
+        T: AsyncWrite + Unpin,
+    {
+        write_to_output(&mut writer, b"Enter your username.\n").await?;
+        let mut name = String::new();
+        std::io::stdin().read_line(&mut name)?;
+        let name = name.trim();
+
+        write_to_output(
+            &mut writer,
+            b"Enter your password. If you haven't registered yet, you will be registered with this username and password.\n",
+        )
+        .await?;
+
+        let mut password = String::new();
+        std::io::stdin().read_line(&mut password)?;
+        let password = password.trim();
+
+        let user = AuthUser::new(name, password);
+
+        let payload = Message::handshake(stream, user).await?.data;
+
+        if let MessagePayload::LoginResponse(data) = payload {
+            write_to_output(&mut writer, data.to_string().as_bytes()).await?;
+            if data.is_success() {
+                return Ok(());
+            }
+        }
+
+        Err(ClientError::LoginFailed.into())
     }
 }
 
@@ -65,15 +99,14 @@ where
     T: AsyncWrite + Unpin,
 {
     stream: T,
-    username: String,
 }
 
 impl<T> ClientSender<T>
 where
     T: AsyncWrite + Unpin,
 {
-    fn new(stream: T, username: String) -> Self {
-        ClientSender { stream, username }
+    fn new(stream: T) -> Self {
+        ClientSender { stream }
     }
 
     /// Starts listening for user input and sends it to the server.
@@ -98,7 +131,7 @@ where
                 }
             };
 
-            let msg = Message::new(&self.username, data);
+            let msg = Message::new(data);
 
             Message::send_msg(&msg, &mut self.stream).await?;
         }
