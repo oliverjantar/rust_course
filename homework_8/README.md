@@ -114,3 +114,40 @@ Logs from server:
 {"v":0,"name":"server","msg":"Registering new user.","level":20,"hostname":"jiri-lenovo","pid":276809,"time":"2023-12-04T20:18:02.36101561Z","target":"server","line":313,"file":"server/src/main.rs"}
 ...
 ```
+
+## Exploring the database tables and stored data
+User can attach shell to the running postgres container by running
+
+```
+$ docker exec -it container-postgresdb /bin/sh
+```
+Once inside the container, you can connect to the database with `psql` command. 
+```
+psql -U postgres -d chat_server_db
+```
+To display all tables, run
+```
+\dt
+```
+Output:
+```
+             List of relations
+ Schema |       Name       | Type  |  Owner   
+--------+------------------+-------+----------
+ public | _sqlx_migrations | table | postgres
+ public | messages         | table | postgres
+ public | users            | table | postgres
+(3 rows)
+```
+```
+SELECT * FROM messages;
+```
+Output:
+```
+                  id                  |               user_id                |    data    |           timestamp           
+--------------------------------------+--------------------------------------+------------+-------------------------------
+ b54ae39a-4a29-4045-b29c-aab8d5713290 | 7fc3bf50-1d97-4d6e-9fb3-eb0e9642afb6 | ahoj       | 2023-12-04 20:33:00.413852+00
+ ddfb756b-3dfc-45bd-aec9-d34b352784cf | 7fc3bf50-1d97-4d6e-9fb3-eb0e9642afb6 | jak se mas | 2023-12-04 20:33:05.973267+00
+ 00fb6924-d69d-476b-ac45-0f6b5df06c19 | 695121c7-3459-46fa-a4a7-4601812f1f62 | dobre      | 2023-12-04 20:33:10.629031+00
+(3 rows)
+```
