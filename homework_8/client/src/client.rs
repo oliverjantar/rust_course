@@ -17,6 +17,9 @@ use tokio::{
 };
 
 /// The main client struct.
+///
+/// It is responsible for connecting to the server and authenticating the user before returning ClientReceiver and ClientSender.
+/// All output messages are written to `writer`.
 pub struct Client;
 
 impl Client {
@@ -173,7 +176,7 @@ where
         Ok(())
     }
 
-    /// Handles the received message. It writes it to the writer and stores the data if it is an image or a file.
+    /// Handles the received message. It writes the message to the `writer`. If message ista if it is an image or a file.
     #[tracing::instrument(name = "Handling message", skip_all)]
     async fn handle_message(
         message: Message,
@@ -212,5 +215,87 @@ where
             _ => {}
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::ClientReceiver;
+
+    use shared::message::{Message, MessagePayload};
+    use tokio::io::AsyncWrite;
+    use tokio::net::{TcpListener, TcpStream};
+
+    use std::io::Result as IoResult;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    struct TestWriter {
+        buf: Vec<u8>,
+    }
+
+    impl AsyncWrite for TestWriter {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<IoResult<usize>> {
+            self.buf.extend_from_slice(buf);
+            Poll::Ready(Ok(buf.len()))
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<IoResult<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<IoResult<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[tokio::test]
+    async fn receiver_receives_text_message() {
+        let test_writer = TestWriter { buf: Vec::new() };
+
+        let addr = "127.0.0.1:0";
+
+        let listener = TcpListener::bind(addr)
+            .await
+            .expect("Couldn't bind to address");
+
+        let port = listener.local_addr().unwrap().port();
+
+        let stream = TcpStream::connect(format!("127.0.0.1:{port}"))
+            .await
+            .expect("Couldn't connect to listener.");
+
+        let client_receiver = ClientReceiver {
+            stream,
+            writer: test_writer,
+            output_dir: "./".to_string(),
+        };
+
+        let payload = MessagePayload::Text("Hello world!".to_string());
+
+        let msg = Message::new(payload);
+
+        let handle = tokio::task::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            Message::send_msg(&msg, &mut socket).await.unwrap();
+        });
+
+        handle.await.unwrap();
+
+        let result = client_receiver.start().await;
+
+        assert!(result.is_ok());
+
+        // I wasn't able to check the inner writer without changing a lot of code. I want to keep it private in the ClientReceiver and I wasn't able to pass some Arc<Mutex<Writer>> because it's not AsyncWrite.
+        // Need to think more about how to structure and test the code.
+        // assert_eq!(
+        //     client_receiver.writer.get_ref(),
+        //     String::from("Hello world!").as_bytes()
+        // );
     }
 }

@@ -88,3 +88,53 @@ where
     writer.flush().await.map_err(ClientError::Write)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+
+    #[tokio::test]
+    async fn get_file() {
+        let (file_name, bytes) = super::get_file("Cargo.toml").await.unwrap();
+        assert_eq!(file_name, "Cargo.toml");
+        assert!(!bytes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_image_fails_on_regular_file() {
+        let result = super::get_image("Cargo.toml").await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            super::ClientError::ConvertImagePng
+        ));
+    }
+
+    #[tokio::test]
+    async fn get_image_fails_when_image_not_present() {
+        let result = super::get_image("sth").await;
+
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            super::ClientError::OpenImage(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn save_file() {
+        let file_name = "test_file.txt";
+        let data = b"test data";
+
+        let result = super::save_file(file_name, data).await;
+
+        assert!(result.is_ok());
+
+        let (file_name, bytes) = super::get_file(file_name).await.unwrap();
+
+        assert_eq!(file_name, "test_file.txt");
+        assert_eq!(bytes, data);
+
+        tokio::fs::remove_file(file_name).await.unwrap();
+    }
+}
