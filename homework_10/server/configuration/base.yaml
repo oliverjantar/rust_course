@@ -1,5 +1,6 @@
 application:
   port: 11111
+  api_port: 11112
 database:
   host: "localhost"
   port: 5432

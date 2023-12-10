@@ -46,6 +46,8 @@ pub struct ApplicationSettings {
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub port: u16,
     pub host: std::net::Ipv4Addr,
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub api_port: u16,
 }
 
 pub enum Environment {

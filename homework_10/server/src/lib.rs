@@ -1,3 +1,4 @@
+pub mod api;
 pub mod configuration;
 pub mod db;
 pub mod message;
