@@ -1,4 +1,6 @@
-use crate::{configuration::DatabaseSettings, server_error::ServerError, user::User};
+use crate::{
+    configuration::DatabaseSettings, message::MessageInfo, server_error::ServerError, user::User,
+};
 use async_trait::async_trait;
 use chrono::Utc;
 use secrecy::ExposeSecret;
@@ -11,6 +13,7 @@ pub trait ChatDb {
     async fn insert_message(&self, message: &Message, user_id: &Uuid) -> Result<(), ServerError>;
     async fn insert_user(&self, user: &User) -> Result<(), ServerError>;
     async fn get_user(&self, username: &str) -> Result<Option<User>, ServerError>;
+    async fn get_messages(&self) -> Result<Vec<MessageInfo>, ServerError>;
 }
 
 pub struct ChatPostgresDb {
@@ -84,6 +87,22 @@ impl ChatDb for ChatPostgresDb {
             username
         )
         .fetch_optional(&self.db_pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to execute query: {:?}", e);
+            ServerError::GetUser
+        })?;
+
+        Ok(user)
+    }
+
+    #[tracing::instrument(skip(self))]
+    async fn get_messages(&self) -> Result<Vec<MessageInfo>, ServerError> {
+        let user = sqlx::query_as!(
+            MessageInfo,
+            "SELECT u.username, m.data as text, m.timestamp FROM messages m inner join users u on u.id = m.user_id order by m.timestamp desc limit 50;",
+        )
+        .fetch_all(&self.db_pool)
         .await
         .map_err(|e| {
             tracing::error!("Failed to execute query: {:?}", e);
