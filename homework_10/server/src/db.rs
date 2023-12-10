@@ -100,7 +100,7 @@ impl ChatDb for ChatPostgresDb {
     async fn get_messages(&self) -> Result<Vec<MessageInfo>, ServerError> {
         let user = sqlx::query_as!(
             MessageInfo,
-            "SELECT u.username, m.data as text, m.timestamp FROM messages m inner join users u on u.id = m.user_id order by m.timestamp desc limit 50;",
+            "SELECT m.id, u.username, m.data as text, m.timestamp FROM messages m inner join users u on u.id = m.user_id order by m.timestamp desc limit 50;",
         )
         .fetch_all(&self.db_pool)
         .await

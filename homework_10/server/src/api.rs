@@ -1,3 +1,5 @@
+use actix_cors::Cors;
+use actix_web::http::header::ContentType;
 use actix_web::{dev::Server, web, App, HttpServer};
 use actix_web::{HttpResponse, Responder};
 use std::net::TcpListener;
@@ -39,16 +41,18 @@ impl Api {
     }
 }
 
-fn run<T>(listener: std::net::TcpListener, db_pool: T) -> Result<Server, std::io::Error>
-where
-    T: ChatDb + Send + Sync + 'static,
+fn run(listener: std::net::TcpListener, db_pool: ChatPostgresDb) -> Result<Server, std::io::Error>
+// where
+//     T: ChatDb + Sync + Send,
 {
     let db_pool = web::Data::new(db_pool);
 
     let server = HttpServer::new(move || {
         App::new()
+            .wrap(Cors::permissive())
             .wrap(TracingLogger::default())
             .route("/health", web::get().to(health_check))
+            .route("/messages", web::get().to(get_messages::<ChatPostgresDb>))
             .app_data(db_pool.clone())
     })
     .listen(listener)?
@@ -59,4 +63,26 @@ where
 
 async fn health_check() -> impl Responder {
     HttpResponse::Ok().finish()
+}
+
+#[tracing::instrument(skip(db))]
+async fn get_messages<T>(db: web::Data<T>) -> impl Responder
+where
+    T: ChatDb + Sync + Send,
+{
+    match db.get_messages().await {
+        Ok(messages) => {
+            let Ok(body) = serde_json::to_string(&messages) else {
+                tracing::error!("Error while serializing messages.");
+                return HttpResponse::InternalServerError().finish();
+            };
+            HttpResponse::Ok()
+                .content_type(ContentType::json())
+                .body(body)
+        }
+        Err(e) => {
+            tracing::error!("Error while getting messages from db. {e}");
+            HttpResponse::InternalServerError().finish()
+        }
+    }
 }
