@@ -1,5 +1,8 @@
 use crate::{
-    configuration::DatabaseSettings, message::MessageInfo, server_error::ServerError, user::User,
+    configuration::DatabaseSettings,
+    message::MessageInfo,
+    server_error::ServerError,
+    user::{User, UserApiDto},
 };
 use async_trait::async_trait;
 use chrono::Utc;
@@ -13,6 +16,7 @@ pub trait ChatDb {
     async fn insert_message(&self, message: &Message, user_id: &Uuid) -> Result<(), ServerError>;
     async fn insert_user(&self, user: &User) -> Result<(), ServerError>;
     async fn get_user(&self, username: &str) -> Result<Option<User>, ServerError>;
+    async fn get_users(&self) -> Result<Vec<UserApiDto>, ServerError>;
     async fn get_messages(&self, username: &str) -> Result<Vec<MessageInfo>, ServerError>;
     async fn remove_user(&self, id: &Uuid) -> Result<u64, ServerError>;
 }
@@ -98,9 +102,22 @@ impl ChatDb for ChatPostgresDb {
     }
 
     #[tracing::instrument(skip(self))]
+    async fn get_users(&self) -> Result<Vec<UserApiDto>, ServerError> {
+        let users = sqlx::query_as!(UserApiDto, "SELECT id, username FROM users")
+            .fetch_all(&self.db_pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to execute query: {:?}", e);
+                ServerError::GetUser
+            })?;
+
+        Ok(users)
+    }
+
+    #[tracing::instrument(skip(self))]
     async fn get_messages(&self, username: &str) -> Result<Vec<MessageInfo>, ServerError> {
         let pattern = format!("{}%", username);
-        let user = sqlx::query_as!(
+        let messages = sqlx::query_as!(
             MessageInfo,
             r#"
             SELECT m.id, u.username, m.data as text, m.timestamp 
@@ -119,7 +136,7 @@ impl ChatDb for ChatPostgresDb {
             ServerError::GetMessages
         })?;
 
-        Ok(user)
+        Ok(messages)
     }
 
     #[tracing::instrument(skip(self))]

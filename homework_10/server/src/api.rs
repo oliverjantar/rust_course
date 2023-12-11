@@ -57,6 +57,7 @@ fn run(listener: std::net::TcpListener, db_pool: ChatPostgresDb) -> Result<Serve
                 "/user/{id}",
                 web::delete().to(delete_user::<ChatPostgresDb>),
             )
+            .route("/users", web::get().to(get_users::<ChatPostgresDb>))
             .app_data(db_pool.clone())
     })
     .listen(listener)?
@@ -94,6 +95,28 @@ where
         }
         Err(e) => {
             tracing::error!("Error while getting messages from db. {e}");
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+#[tracing::instrument(skip(db))]
+async fn get_users<T>(db: web::Data<T>) -> impl Responder
+where
+    T: ChatDb + Sync + Send,
+{
+    match db.get_users().await {
+        Ok(users) => {
+            let Ok(body) = serde_json::to_string(&users) else {
+                tracing::error!("Error while serializing users.");
+                return HttpResponse::InternalServerError().finish();
+            };
+            HttpResponse::Ok()
+                .content_type(ContentType::json())
+                .body(body)
+        }
+        Err(e) => {
+            tracing::error!("Error while getting users from db. {e}");
             HttpResponse::InternalServerError().finish()
         }
     }

@@ -6,6 +6,7 @@ use ring::{
     rand::{SecureRandom, SystemRandom},
 };
 use secrecy::{ExposeSecret, Secret};
+use serde::Serialize;
 use shared::message::AuthUser;
 use uuid::Uuid;
 
@@ -14,9 +15,15 @@ use crate::server_error::ServerError;
 #[derive(Debug)]
 pub struct User {
     pub id: Uuid,
-    pub password: Secret<String>,
     pub username: String,
+    pub password: Secret<String>,
     pub salt: String,
+}
+
+#[derive(Serialize)]
+pub struct UserApiDto {
+    pub id: Uuid,
+    pub username: String,
 }
 
 const CREDENTIAL_LEN: usize = digest::SHA512_OUTPUT_LEN;

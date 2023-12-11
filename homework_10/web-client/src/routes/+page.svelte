@@ -6,6 +6,9 @@
 	let messagesContainer;
 	let filter = '';
 
+  let users = [];
+  let userIds = new Set();
+
 	async function fetchMessages() {
 		const response = await fetch(`http://localhost:11112/messages?username=${filter}`);
 		if (response.ok) {
@@ -22,10 +25,38 @@
 		}
 	}
 
+  async function fetchUsers(){
+    const response = await fetch(`http://localhost:11112/users`);
+    if(response.ok){
+      let newUsers = await response.json();
+      newUsers.forEach((user) => {
+        if(!userIds.has(user.id)){
+          userIds.add(user.id);
+          users = [...users, user];
+        }
+      });
+    }
+  }
+
+  async function fetchUsersAndMessages(){
+    return Promise.all([fetchUsers(), fetchMessages()]);
+  }
+
+  async function deleteUser(id){
+    const response = await fetch(`http://localhost:11112/user/${id}`, {
+      method: 'DELETE'
+    });
+    if(response.ok){
+      clearMessages()
+      users = users.filter((user) => user.id !== id);
+      userIds.delete(id);
+    }
+  }
+
 	let interval;
 	onMount(() => {
 		fetchMessages();
-		interval = setInterval(fetchMessages, 2000);
+		interval = setInterval(fetchUsersAndMessages, 2000);
 	});
 
 	onDestroy(() => {
@@ -50,7 +81,7 @@
 		});
 	}
 
-  function filterMsg() {
+  function clearMessages() {
     messages = [];
     messageIds = new Set();
   }
@@ -58,15 +89,29 @@
 
 <h1>Welcome to Chat client!</h1>
 
-<input type="text" bind:value={filter} on:input={filterMsg} placeholder="Filter by username" />
+<input type="text" bind:value={filter} on:input={clearMessages} placeholder="Filter by username" />
 <div class="messages-container">
-
 	<div class="messages-list" bind:this={messagesContainer}>
 		{#each messages as message}
 			<div class="message-container">
 				<div class="message">
 					<strong>{message.username}</strong>: {message.text}
 					<small>{formatTime(message.timestamp)}</small>
+				</div>
+			</div>
+		{/each}
+	</div>
+</div>
+<div class="users-container">
+	<div class="users-list" >
+		{#each users as user}
+			<div class="user-container">
+				<div class="user">
+					<strong>{user.username}</strong>
+          <button class="button" on:click=
+          {() => {
+            deleteUser(user.id);
+          }}>Delete</button>
 				</div>
 			</div>
 		{/each}
@@ -111,4 +156,13 @@
 		border-radius: 4px;
 		display: inline-block;
 	}
+
+  .button {
+    margin-left: 10px;
+    background-color: red;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
 </style>
