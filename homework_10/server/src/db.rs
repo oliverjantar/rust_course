@@ -13,7 +13,7 @@ pub trait ChatDb {
     async fn insert_message(&self, message: &Message, user_id: &Uuid) -> Result<(), ServerError>;
     async fn insert_user(&self, user: &User) -> Result<(), ServerError>;
     async fn get_user(&self, username: &str) -> Result<Option<User>, ServerError>;
-    async fn get_messages(&self) -> Result<Vec<MessageInfo>, ServerError>;
+    async fn get_messages(&self, username: &str) -> Result<Vec<MessageInfo>, ServerError>;
 }
 
 pub struct ChatPostgresDb {
@@ -97,10 +97,19 @@ impl ChatDb for ChatPostgresDb {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn get_messages(&self) -> Result<Vec<MessageInfo>, ServerError> {
+    async fn get_messages(&self, username: &str) -> Result<Vec<MessageInfo>, ServerError> {
+        let pattern = format!("{}%", username);
         let user = sqlx::query_as!(
             MessageInfo,
-            "SELECT m.id, u.username, m.data as text, m.timestamp FROM messages m inner join users u on u.id = m.user_id order by m.timestamp desc limit 50;",
+            r#"
+            SELECT m.id, u.username, m.data as text, m.timestamp 
+            FROM messages m 
+            INNER JOIN users u on u.id = m.user_id
+            WHERE ($1 = '') OR u.username like $2
+            ORDER BY m.timestamp DESC LIMIT 50;
+            "#,
+            username,
+            pattern
         )
         .fetch_all(&self.db_pool)
         .await

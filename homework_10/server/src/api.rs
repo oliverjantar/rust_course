@@ -2,6 +2,7 @@ use actix_cors::Cors;
 use actix_web::http::header::ContentType;
 use actix_web::{dev::Server, web, App, HttpServer};
 use actix_web::{HttpResponse, Responder};
+use serde::Deserialize;
 use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 
@@ -65,12 +66,20 @@ async fn health_check() -> impl Responder {
     HttpResponse::Ok().finish()
 }
 
+#[derive(Deserialize, Debug)]
+struct MessageQuery {
+    username: Option<String>,
+}
+
 #[tracing::instrument(skip(db))]
-async fn get_messages<T>(db: web::Data<T>) -> impl Responder
+async fn get_messages<T>(db: web::Data<T>, query: web::Query<MessageQuery>) -> impl Responder
 where
     T: ChatDb + Sync + Send,
 {
-    match db.get_messages().await {
+    match db
+        .get_messages(query.username.as_deref().unwrap_or(""))
+        .await
+    {
         Ok(messages) => {
             let Ok(body) = serde_json::to_string(&messages) else {
                 tracing::error!("Error while serializing messages.");
