@@ -14,6 +14,7 @@ pub trait ChatDb {
     async fn insert_user(&self, user: &User) -> Result<(), ServerError>;
     async fn get_user(&self, username: &str) -> Result<Option<User>, ServerError>;
     async fn get_messages(&self, username: &str) -> Result<Vec<MessageInfo>, ServerError>;
+    async fn remove_user(&self, id: &Uuid) -> Result<u64, ServerError>;
 }
 
 pub struct ChatPostgresDb {
@@ -115,9 +116,22 @@ impl ChatDb for ChatPostgresDb {
         .await
         .map_err(|e| {
             tracing::error!("Failed to execute query: {:?}", e);
-            ServerError::GetUser
+            ServerError::GetMessages
         })?;
 
         Ok(user)
+    }
+
+    #[tracing::instrument(skip(self))]
+    async fn remove_user(&self, id: &Uuid) -> Result<u64, ServerError> {
+        let result = sqlx::query!("DELETE from users where id = $1", id)
+            .execute(&self.db_pool)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to execute query: {:?}", e);
+                ServerError::GetMessages
+            })?;
+
+        Ok(result.rows_affected())
     }
 }

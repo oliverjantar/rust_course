@@ -4,7 +4,9 @@ use actix_web::{dev::Server, web, App, HttpServer};
 use actix_web::{HttpResponse, Responder};
 use serde::Deserialize;
 use std::net::TcpListener;
+use std::ops::Deref;
 use tracing_actix_web::TracingLogger;
+use uuid::Uuid;
 
 use crate::{
     configuration::Settings,
@@ -42,10 +44,7 @@ impl Api {
     }
 }
 
-fn run(listener: std::net::TcpListener, db_pool: ChatPostgresDb) -> Result<Server, std::io::Error>
-// where
-//     T: ChatDb + Sync + Send,
-{
+fn run(listener: std::net::TcpListener, db_pool: ChatPostgresDb) -> Result<Server, std::io::Error> {
     let db_pool = web::Data::new(db_pool);
 
     let server = HttpServer::new(move || {
@@ -54,6 +53,10 @@ fn run(listener: std::net::TcpListener, db_pool: ChatPostgresDb) -> Result<Serve
             .wrap(TracingLogger::default())
             .route("/health", web::get().to(health_check))
             .route("/messages", web::get().to(get_messages::<ChatPostgresDb>))
+            .route(
+                "/user/{id}",
+                web::delete().to(delete_user::<ChatPostgresDb>),
+            )
             .app_data(db_pool.clone())
     })
     .listen(listener)?
@@ -91,6 +94,23 @@ where
         }
         Err(e) => {
             tracing::error!("Error while getting messages from db. {e}");
+            HttpResponse::InternalServerError().finish()
+        }
+    }
+}
+
+#[tracing::instrument(skip(db))]
+async fn delete_user<T>(db: web::Data<T>, path: web::Path<Uuid>) -> impl Responder
+where
+    T: ChatDb + Sync + Send,
+{
+    match db.remove_user(path.deref()).await {
+        Ok(number) => match number {
+            1 => HttpResponse::NoContent().finish(),
+            _ => HttpResponse::NotFound().finish(),
+        },
+        Err(e) => {
+            tracing::error!("Error while removing user from db. {e}");
             HttpResponse::InternalServerError().finish()
         }
     }

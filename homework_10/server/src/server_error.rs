@@ -17,6 +17,10 @@ pub enum ServerError {
     StoreUser,
     #[error("Failed to get user")]
     GetUser,
+    #[error("Failed to get messages")]
+    GetMessages,
+    #[error("Failed to delete user")]
+    DeleteUser,
     #[error("Failed to decode password")]
     PasswordDecode,
     #[error("Failed to create user")]
