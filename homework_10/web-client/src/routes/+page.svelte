@@ -6,8 +6,8 @@
 	let messagesContainer;
 	let filter = '';
 
-  let users = [];
-  let userIds = new Set();
+	let users = [];
+	let userIds = new Set();
 
 	async function fetchMessages() {
 		const response = await fetch(`http://localhost:11112/messages?username=${filter}`);
@@ -25,33 +25,33 @@
 		}
 	}
 
-  async function fetchUsers(){
-    const response = await fetch(`http://localhost:11112/users`);
-    if(response.ok){
-      let newUsers = await response.json();
-      newUsers.forEach((user) => {
-        if(!userIds.has(user.id)){
-          userIds.add(user.id);
-          users = [...users, user];
-        }
-      });
-    }
-  }
+	async function fetchUsers() {
+		const response = await fetch(`http://localhost:11112/users`);
+		if (response.ok) {
+			let newUsers = await response.json();
+			newUsers.forEach((user) => {
+				if (!userIds.has(user.id)) {
+					userIds.add(user.id);
+					users = [...users, user];
+				}
+			});
+		}
+	}
 
-  async function fetchUsersAndMessages(){
-    return Promise.all([fetchUsers(), fetchMessages()]);
-  }
+	async function fetchUsersAndMessages() {
+		return Promise.all([fetchUsers(), fetchMessages()]);
+	}
 
-  async function deleteUser(id){
-    const response = await fetch(`http://localhost:11112/user/${id}`, {
-      method: 'DELETE'
-    });
-    if(response.ok){
-      clearMessages()
-      users = users.filter((user) => user.id !== id);
-      userIds.delete(id);
-    }
-  }
+	async function deleteUser(id) {
+		const response = await fetch(`http://localhost:11112/user/${id}`, {
+			method: 'DELETE'
+		});
+		if (response.ok) {
+			clearMessages();
+			users = users.filter((user) => user.id !== id);
+			userIds.delete(id);
+		}
+	}
 
 	let interval;
 	onMount(() => {
@@ -81,10 +81,10 @@
 		});
 	}
 
-  function clearMessages() {
-    messages = [];
-    messageIds = new Set();
-  }
+	function clearMessages() {
+		messages = [];
+		messageIds = new Set();
+	}
 </script>
 
 <h1>Welcome to Chat client!</h1>
@@ -103,15 +103,17 @@
 	</div>
 </div>
 <div class="users-container">
-	<div class="users-list" >
+	<div class="users-list">
 		{#each users as user}
 			<div class="user-container">
 				<div class="user">
 					<strong>{user.username}</strong>
-          <button class="button" on:click=
-          {() => {
-            deleteUser(user.id);
-          }}>Delete</button>
+					<button
+						class="button"
+						on:click={() => {
+							deleteUser(user.id);
+						}}>Delete</button
+					>
 				</div>
 			</div>
 		{/each}
@@ -157,12 +159,12 @@
 		display: inline-block;
 	}
 
-  .button {
-    margin-left: 10px;
-    background-color: red;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-  }
+	.button {
+		margin-left: 10px;
+		background-color: red;
+		color: white;
+		border: none;
+		border-radius: 4px;
+		cursor: pointer;
+	}
 </style>
