@@ -8,6 +8,7 @@ use std::ops::Deref;
 use tracing_actix_web::TracingLogger;
 use uuid::Uuid;
 
+use crate::server_error::ServerError;
 use crate::{
     configuration::Settings,
     db::{ChatDb, ChatPostgresDb},
@@ -19,7 +20,7 @@ pub struct Api {
 }
 
 impl Api {
-    pub fn build(config: Settings) -> Result<Self, std::io::Error> {
+    pub fn build(config: Settings) -> Result<Self, ServerError> {
         let db = ChatPostgresDb::new(&config.database);
 
         let address = format!(
@@ -28,7 +29,7 @@ impl Api {
         );
         tracing::info!("Starting api on address {address}...");
 
-        let listener = TcpListener::bind(address)?;
+        let listener = TcpListener::bind(address).map_err(ServerError::Bind)?;
         let port = listener.local_addr().unwrap().port();
         let server = run(listener, db)?;
 
@@ -44,7 +45,7 @@ impl Api {
     }
 }
 
-fn run(listener: std::net::TcpListener, db_pool: ChatPostgresDb) -> Result<Server, std::io::Error> {
+fn run(listener: std::net::TcpListener, db_pool: ChatPostgresDb) -> Result<Server, ServerError> {
     let db_pool = web::Data::new(db_pool);
 
     let server = HttpServer::new(move || {
@@ -60,7 +61,8 @@ fn run(listener: std::net::TcpListener, db_pool: ChatPostgresDb) -> Result<Serve
             .route("/users", web::get().to(get_users::<ChatPostgresDb>))
             .app_data(db_pool.clone())
     })
-    .listen(listener)?
+    .listen(listener)
+    .map_err(ServerError::StartApi)?
     .run();
 
     Ok(server)

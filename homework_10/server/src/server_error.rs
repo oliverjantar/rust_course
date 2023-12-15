@@ -25,4 +25,6 @@ pub enum ServerError {
     PasswordDecode,
     #[error("Failed to create user")]
     CreateUser,
+    #[error("Failed to start api. {0}")]
+    StartApi(#[source] io::Error),
 }

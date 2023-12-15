@@ -1,6 +1,6 @@
 use crate::{
     configuration::DatabaseSettings,
-    message::MessageInfo,
+    message_info::MessageInfo,
     server_error::ServerError,
     user::{User, UserApiDto},
 };
@@ -14,10 +14,10 @@ use uuid::Uuid;
 #[async_trait]
 pub trait ChatDb {
     async fn insert_message(&self, message: &Message, user_id: &Uuid) -> Result<(), ServerError>;
+    async fn get_messages(&self, username: &str) -> Result<Vec<MessageInfo>, ServerError>;
     async fn insert_user(&self, user: &User) -> Result<(), ServerError>;
     async fn get_user(&self, username: &str) -> Result<Option<User>, ServerError>;
     async fn get_users(&self) -> Result<Vec<UserApiDto>, ServerError>;
-    async fn get_messages(&self, username: &str) -> Result<Vec<MessageInfo>, ServerError>;
     async fn remove_user(&self, id: &Uuid) -> Result<u64, ServerError>;
 }
 
@@ -146,7 +146,7 @@ impl ChatDb for ChatPostgresDb {
             .await
             .map_err(|e| {
                 tracing::error!("Failed to execute query: {:?}", e);
-                ServerError::GetMessages
+                ServerError::DeleteUser
             })?;
 
         Ok(result.rows_affected())

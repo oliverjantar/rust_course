@@ -41,7 +41,7 @@ fn setup_tracing(logs_dir: &str) -> Result<()> {
 }
 
 /// Starts the client. It will connect to the server and start listening for commands.
-/// Receiving messages will be handled in a separate thread.
+/// Receiving messages will be handled in a separate task.
 #[tracing::instrument(name = "Starting client", skip(writer))]
 async fn start<T>(args: Args, writer: T) -> Result<()>
 where

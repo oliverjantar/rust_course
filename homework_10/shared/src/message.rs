@@ -166,7 +166,7 @@ impl Display for Message {
                 filename
             )?,
             MessagePayload::ServerInfo(text) => writeln!(f, "--      {}      --", text)?,
-            MessagePayload::Login(_) => todo!(),
+            MessagePayload::Login(_) => writeln!(f, "Login payload")?, //This won't be ever displayed in the client output
             MessagePayload::LoginResponse(data) => writeln!(f, "{}", data)?,
         }
         Ok(())

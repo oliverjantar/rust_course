@@ -87,49 +87,75 @@
 	}
 </script>
 
-<h1>Welcome to Chat client!</h1>
+<div class="main-container">
+    <h1>Welcome to Chat client!</h1>
+	Filter messages:
+	<input type="text" bind:value={filter} on:input={clearMessages} placeholder="username" />
+    <div class="content-container">
+        <div class="messages-container">
+            <div class="messages-list" bind:this={messagesContainer}>
+				{#each messages as message}
+					<div class="message-container">
+						<div class="message">
+							<strong>{message.username}</strong>: {message.text}
+							<small>{formatTime(message.timestamp)}</small>
+						</div>
+					</div>
+				{/each}
+			</div>
+        </div>
 
-<input type="text" bind:value={filter} on:input={clearMessages} placeholder="Filter by username" />
-<div class="messages-container">
-	<div class="messages-list" bind:this={messagesContainer}>
-		{#each messages as message}
-			<div class="message-container">
-				<div class="message">
-					<strong>{message.username}</strong>: {message.text}
-					<small>{formatTime(message.timestamp)}</small>
-				</div>
+        <div class="users-container">
+            <div class="users-list">
+				{#each users as user}
+					<div class="user-container">
+						<div class="user">
+							<strong>{user.username}</strong>
+							<button
+								class="button"
+								on:click={() => {
+									deleteUser(user.id);
+								}}>Delete</button
+							>
+						</div>
+					</div>
+				{/each}
 			</div>
-		{/each}
-	</div>
+        </div>
+    </div>
 </div>
-<div class="users-container">
-	<div class="users-list">
-		{#each users as user}
-			<div class="user-container">
-				<div class="user">
-					<strong>{user.username}</strong>
-					<button
-						class="button"
-						on:click={() => {
-							deleteUser(user.id);
-						}}>Delete</button
-					>
-				</div>
-			</div>
-		{/each}
-	</div>
-</div>
+
+
 
 <style>
+
+	.main-container {
+		text-align: center;
+		background-color: black;
+		color: white;
+		font-family: Helvetica, Arial, sans-serif;
+	}
+
+	.content-container {
+		display: flex;
+		justify-content: center;
+		gap: 20px;
+		padding: 20px;
+	}
+
+	.messages-container, .users-container {
+		flex: 1; 
+		max-width: 500px;
+	}
+
 	.messages-container {
+		text-align: left;
 		display: flex;
 		justify-content: center;
 		align-items: flex-start;
 		height: 500px;
 		padding: 20px;
-		background-color: black;
-		color: white;
-		font-family: Helvetica, Arial, sans-serif;
+		
 	}
 
 	.messages-list {
@@ -140,19 +166,19 @@
 		border-radius: 10px;
 		padding: 10px;
 		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+		min-height: 500px;
 	}
 
 	.message-container {
 		margin-bottom: 5px;
 		max-width: 100%;
 	}
+
 	.message {
 		display: block;
 		margin-bottom: 10px;
 		padding: 8px 12px;
-		background-color: #333;
-		color: white;
-		font-family: Helvetica, Arial, sans-serif;
+	
 		word-wrap: break-word;
 		max-width: 100%;
 		border-radius: 4px;
@@ -166,5 +192,12 @@
 		border: none;
 		border-radius: 4px;
 		cursor: pointer;
+	}
+
+	.users-container {
+		text-align: left;
+		padding: 10px;
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+		overflow-y: auto; 
 	}
 </style>

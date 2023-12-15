@@ -4,6 +4,7 @@
 1. [Server](#server)
 2. [Client](#client)
 3. [Running a server and client](#running-a-server-and-client)
+4. [Web client](#web-client)
 
 # Server
 
@@ -19,6 +20,18 @@ To run just the migrations, run `SKIP_DOCKER=true ./scripts/init_db.sh`.
 ### Configuration
 Configuration of the server is done through configuration files in `./configuration/base.yaml` and `./configuration/local.yaml`.
 It is possible to start a server on a different port or setup a different database connection.
+
+### API
+Server exposes an API to get all messages and users. It is used by the web client to display all messages and filter them by username.
+The API is build with Actix-web and by default it runs on port `11112`. It can be changed in the configuration files.
+
+List of all endpoints:
+```
+GET /health - health check
+GET /messages?username={username} - get all messages, optionally filter by username
+GET /users - get all users
+DELETE /user/{id} - delete user and all his messages
+```
 
 ### Tracing
 When running a server, debug tracing logs are sent to the standard output.
@@ -151,3 +164,22 @@ Output:
  00fb6924-d69d-476b-ac45-0f6b5df06c19 | 695121c7-3459-46fa-a4a7-4601812f1f62 | dobre      | 2023-12-04 20:33:10.629031+00
 (3 rows)
 ```
+
+# Web client
+
+Web client is a simple web application written in svelte. It allows users to see all messages, filter them by username and delete user and all his messages.
+The client gets data from server's API, thus it needs to be running.
+
+On the background, the web client periodically gets new messages from the server and updates the UI. The same for newly connected users.
+When new messages appear in the list, the list scrolls to the bottom to display the latest messages.
+
+There is no authentication in place, hence any user can display everything and also delete all users.
+
+To run the web client, run the following commands:
+```
+$ cd ./web-client
+$ npm install
+$ npm run dev -- --open
+```
+
+![Web client](image.png)
