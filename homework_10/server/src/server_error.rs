@@ -27,4 +27,6 @@ pub enum ServerError {
     CreateUser,
     #[error("Failed to start api. {0}")]
     StartApi(#[source] io::Error),
+    #[error("Connection is closed.")]
+    ClosedConnection,
 }

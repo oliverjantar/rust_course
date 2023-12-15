@@ -39,9 +39,11 @@ pub async fn start(config: Settings) -> Result<(), ServerError> {
                 let clients = Arc::clone(&clients);
                 let db = Arc::clone(&db);
                 tokio::spawn(async move {
+                    tracing::debug!("New connection");
                     if let Err(e) = handle_connection(stream, address, sender, clients, db).await {
                         tracing::error!("Error while handling connection: {}", e);
                     }
+                    tracing::debug!("Connection ended.")
                 });
             }
             Err(e) => tracing::error!("Encountered network error from Tcp stream: {e}"),
@@ -149,7 +151,13 @@ async fn authenticate_user(
         // wait for username and password from client
         let msg: Message = match Message::receive_msg(stream).await {
             Ok(msg) => msg,
-            Err(_) => continue,
+            Err(err) => {
+                tracing::debug!(
+                    "Error while receiving msg. Message was malformed or connection ended. {}",
+                    err
+                );
+                return Err(ServerError::ClosedConnection);
+            }
         };
 
         if let MessagePayload::Login(auth_user) = msg.data {
