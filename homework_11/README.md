@@ -23,7 +23,7 @@ It is possible to start a server on a different port or setup a different databa
 
 ### API
 Server exposes an API to get all messages and users. It is used by the web client to display all messages and filter them by username.
-The API is build with Actix-web and by default it runs on port `11112`. It can be changed in the configuration files.
+The API is build with Actix-web and by default it runs on `0.0.0.0:11112` because of running Prometheus in docker. It can be changed in the configuration files.
 
 List of all endpoints:
 ```
@@ -31,10 +31,30 @@ GET /health - health check
 GET /messages?username={username} - get all messages, optionally filter by username
 GET /users - get all users
 DELETE /user/{id} - delete user and all his messages
+GET /metrics - get metrics for Prometheus
 ```
 
 ### Tracing
 When running a server, debug tracing logs are sent to the standard output.
+
+### Metrics
+Server exposes metrics for Prometheus on `/metrics` endpoint. It is tracking number of connected users and number of messages sent (including messages that are sent by server e.g. `new user connected`).
+Prometheus is collecting the metrics every 5 seconds. This can be changed in the `prometheus.yml` file.
+
+Details of metrics:
+```
+# HELP active_connections_counter How many clients are connected to the server
+# TYPE active_connections_counter gauge
+active_connections_counter 0
+# HELP messages_counter How many messages were sent to clients
+# TYPE messages_counter counter
+messages_counter 5
+```
+
+To run Prometheus and Grafana, run the following commands after starting the server:
+```
+$ docker compose up
+```
 
 ### Running a server
 Because of the configuration files located in the server directory, you need to `cd` to the s./server before running it.
