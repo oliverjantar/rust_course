@@ -203,13 +203,6 @@ impl AuthPayload {
         }
     }
 
-    pub fn new_register() -> Self {
-        Self {
-            is_ok: true,
-            message: Some(AuthMessage::UserRegistered),
-            err: None,
-        }
-    }
     pub fn new_error() -> Self {
         Self {
             is_ok: false,
@@ -227,14 +220,7 @@ impl AuthPayload {
 impl Display for AuthPayload {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.is_ok {
-            let message = self
-                .message
-                .as_ref()
-                .unwrap_or(&AuthMessage::LoginSuccessful);
-            match message {
-                AuthMessage::LoginSuccessful => writeln!(f, "Login was successful.")?,
-                AuthMessage::UserRegistered => writeln!(f, "You were successfully registered.")?,
-            }
+            writeln!(f, "Login was successful.")?;
         } else {
             writeln!(f, "Login failed, incorrect password.")?
         }
@@ -245,7 +231,6 @@ impl Display for AuthPayload {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum AuthMessage {
     LoginSuccessful,
-    UserRegistered,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]

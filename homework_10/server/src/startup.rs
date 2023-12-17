@@ -2,14 +2,14 @@ use configuration::Settings;
 use flume::{Receiver, Sender};
 use futures::stream::{self, StreamExt};
 use server_error::ServerError;
-use shared::message::{AuthPayload, Message, MessagePayload};
+use shared::message::{AuthPayload, AuthUser, Message, MessagePayload};
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
-use uuid::Uuid;
 
 use crate::db::{ChatDb, ChatPostgresDb};
+use crate::user::UserInfo;
 use crate::{configuration, server_error};
 
 /// Starts the server. It will listen for incoming connections and spawn a new thread for each connection.
@@ -61,8 +61,11 @@ async fn handle_connection(
     db: Arc<impl ChatDb>,
 ) -> Result<(), ServerError> {
     tracing::info!("New connection from: {address}. Authenticating...");
-    let (current_user_id, current_user_name) = authenticate_user(&mut stream, db.clone()).await?;
-
+    let current_user = run_until_authenticated(&mut stream, db.clone()).await?;
+    tracing::info!(
+        "User {} authenticated. Starting listening for messages..",
+        &current_user.username
+    );
     let clients_count = clients.lock().await.len();
 
     let (mut read_half, mut write_half) = stream.into_split();
@@ -74,7 +77,7 @@ async fn handle_connection(
     clients.lock().await.insert(address, write_half);
 
     // Broadcast to other users that new user was connected
-    let msg = Message::new_server_msg(&format!("New user connected: {}", current_user_name));
+    let msg = Message::new_server_msg(&format!("New user connected: {}", current_user.username));
     sender
         .send_async((address, msg))
         .await
@@ -83,9 +86,9 @@ async fn handle_connection(
     // Start receiving messages from user and broadcast them
     while let Ok(mut message) = Message::receive_msg(&mut read_half).await {
         tracing::info!("New message from: {address}");
-        _ = db.insert_message(&message, &current_user_id).await;
+        _ = db.insert_message(&message, &current_user.id).await;
 
-        message.set_from_user(&current_user_name);
+        message.set_from_user(&current_user.username);
 
         sender
             .send_async((address, message))
@@ -143,12 +146,11 @@ async fn remove_client(
     clients.lock().await.remove(ip_addr);
 }
 
-async fn authenticate_user(
-    mut stream: &mut TcpStream,
+async fn run_until_authenticated(
+    stream: &mut TcpStream,
     db: Arc<impl ChatDb>,
-) -> Result<(Uuid, String), ServerError> {
+) -> Result<UserInfo, ServerError> {
     loop {
-        // wait for username and password from client
         let msg: Message = match Message::receive_msg(stream).await {
             Ok(msg) => msg,
             Err(err) => {
@@ -161,72 +163,64 @@ async fn authenticate_user(
         };
 
         if let MessagePayload::Login(auth_user) = msg.data {
-            tracing::debug!("Received log in message from user.");
-            if let Ok(user_db) = db.get_user(&auth_user.name).await {
-                match user_db {
-                    Some(user) => {
-                        let verification_result =
-                            user.verify_user_password(auth_user.password.as_bytes());
+            let username = auth_user.name.clone();
+            tracing::debug!("Received request to log in user: {}.", username);
+            match verify_or_create_user(auth_user, &db).await {
+                Ok(Some(user)) => {
+                    tracing::debug!("User {} successfully logged in.", username);
+                    let payload = MessagePayload::LoginResponse(AuthPayload::new_login());
 
-                        if verification_result.is_ok_and(|is_verified| is_verified) {
-                            tracing::debug!("Login was successful.");
+                    let msg = Message::new(payload);
+                    Message::send_msg(&msg, stream)
+                        .await
+                        .map_err(ServerError::SendMessage)?;
 
-                            let payload = MessagePayload::LoginResponse(AuthPayload::new_login());
+                    return Ok(user);
+                }
+                Ok(None) => {
+                    tracing::debug!("Incorrect login for user: {}", username);
+                    let payload = MessagePayload::LoginResponse(AuthPayload::new_error());
 
-                            let msg = Message::new(payload);
-                            Message::send_msg(&msg, stream)
-                                .await
-                                .map_err(ServerError::SendMessage)?;
+                    let msg = Message::new(payload);
+                    Message::send_msg(&msg, stream)
+                        .await
+                        .map_err(ServerError::SendMessage)?;
+                }
+                Err(e) => {
+                    tracing::error!("Error while logging in user {}. Error {}", username, e);
+                    let payload = MessagePayload::LoginResponse(AuthPayload::new_error());
 
-                            return Ok((user.id, user.username));
-                        } else {
-                            tracing::debug!("Incorrect password.");
-
-                            let payload = MessagePayload::LoginResponse(AuthPayload::new_error());
-
-                            let msg = Message::new(payload);
-                            Message::send_msg(&msg, stream)
-                                .await
-                                .map_err(ServerError::SendMessage)?;
-                            continue;
-                        }
-                    }
-                    // If user does not exist, create one
-                    None => {
-                        tracing::debug!("Registering new user.");
-
-                        let Ok(user) = auth_user.try_into() else {
-                            let payload = MessagePayload::LoginResponse(AuthPayload::new_error());
-
-                            let msg = Message::new(payload);
-                            Message::send_msg(&msg, stream)
-                                .await
-                                .map_err(ServerError::SendMessage)?;
-                            continue;
-                        };
-
-                        if db.insert_user(&user).await.is_err() {
-                            let payload = MessagePayload::LoginResponse(AuthPayload::new_error());
-
-                            let msg = Message::new(payload);
-                            Message::send_msg(&msg, stream)
-                                .await
-                                .map_err(ServerError::SendMessage)?;
-                            continue;
-                        } else {
-                            let payload =
-                                MessagePayload::LoginResponse(AuthPayload::new_register());
-
-                            let msg = Message::new(payload);
-                            Message::send_msg(&msg, &mut stream)
-                                .await
-                                .map_err(ServerError::SendMessage)?;
-
-                            return Ok((user.id, user.username));
-                        }
-                    }
+                    let msg = Message::new(payload);
+                    Message::send_msg(&msg, stream)
+                        .await
+                        .map_err(ServerError::SendMessage)?;
                 }
             }
         }
     }
+}
+
+async fn verify_or_create_user(
+    auth_user: AuthUser,
+    db: &Arc<impl ChatDb>,
+) -> Result<Option<UserInfo>, ServerError> {
+    let user_result = db.get_user(&auth_user.name).await?;
+    return match user_result {
+        Some(user) => {
+            let verification_result = user.verify_user_password(auth_user.password.as_bytes());
+
+            verification_result.map(|is_verified| match is_verified {
+                true => Ok(Some(user.into())),
+                false => Ok(None),
+            })?
+        }
+        None => {
+            tracing::debug!("Registering new user.");
+
+            let user = auth_user.try_into()?;
+
+            db.insert_user(&user).await?;
+            Ok(Some(user.into()))
+        }
+    };
 }

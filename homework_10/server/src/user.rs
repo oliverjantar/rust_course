@@ -20,12 +20,6 @@ pub struct User {
     pub salt: String,
 }
 
-#[derive(Serialize)]
-pub struct UserApiDto {
-    pub id: Uuid,
-    pub username: String,
-}
-
 const CREDENTIAL_LEN: usize = digest::SHA512_OUTPUT_LEN;
 const N_ITER: Option<NonZeroU32> = NonZeroU32::new(100_000);
 
@@ -85,5 +79,20 @@ impl TryFrom<AuthUser> for User {
             username: value.name,
             salt: encoded_salt,
         })
+    }
+}
+
+#[derive(Serialize)]
+pub struct UserInfo {
+    pub id: Uuid,
+    pub username: String,
+}
+
+impl From<User> for UserInfo {
+    fn from(value: User) -> Self {
+        Self {
+            id: value.id,
+            username: value.username,
+        }
     }
 }
