@@ -15,9 +15,11 @@ chrono = { version = "0.4.31", features = ["serde"] }
 config = "0.13.4"
 flume = { version = "0.11.0", features = ["async"] }
 futures = "0.3.29"
+lazy_static = "1.4.0"
 prometheus = "0.13.3"
 rand = "0.8.5"
 ring = "0.17.6"
+scopeguard = "1.2.0"
 secrecy = { version = "0.8.0", features = ["serde"] }
 serde = "1.0.193"
 serde-aux = "4.2.0"

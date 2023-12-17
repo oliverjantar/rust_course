@@ -2,6 +2,7 @@ use actix_cors::Cors;
 use actix_web::http::header::ContentType;
 use actix_web::{dev::Server, web, App, HttpServer};
 use actix_web::{HttpResponse, Responder};
+use prometheus::{Encoder, TextEncoder};
 use serde::Deserialize;
 use std::net::TcpListener;
 use std::ops::Deref;
@@ -23,10 +24,8 @@ impl Api {
     pub fn build(config: Settings) -> Result<Self, ServerError> {
         let db = ChatPostgresDb::new(&config.database);
 
-        let address = format!(
-            "{}:{}",
-            config.application.host, config.application.api_port
-        );
+        let address = format!("{}:{}", config.api.host, config.api.port);
+
         tracing::info!("Starting api on address {address}...");
 
         let listener = TcpListener::bind(address).map_err(ServerError::Bind)?;
@@ -53,6 +52,7 @@ fn run(listener: std::net::TcpListener, db_pool: ChatPostgresDb) -> Result<Serve
             .wrap(Cors::permissive())
             .wrap(TracingLogger::default())
             .route("/health", web::get().to(health_check))
+            .route("/metrics", web::get().to(metrics_handler))
             .route("/messages", web::get().to(get_messages::<ChatPostgresDb>))
             .route(
                 "/user/{id}",
@@ -139,4 +139,17 @@ where
             HttpResponse::InternalServerError().finish()
         }
     }
+}
+
+async fn metrics_handler() -> impl Responder {
+    println!("scraped");
+
+    let encoder = TextEncoder::new();
+    let mut buffer = vec![];
+
+    let metrics = prometheus::gather();
+
+    encoder.encode(&metrics, &mut buffer).unwrap();
+
+    HttpResponse::Ok().body(buffer)
 }

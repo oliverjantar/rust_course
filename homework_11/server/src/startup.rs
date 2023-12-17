@@ -9,6 +9,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 
 use crate::db::{ChatDb, ChatPostgresDb};
+use crate::metrics::{ACTIVE_CONNECTIONS, MESSAGES_COUNTER};
 use crate::user::UserInfo;
 use crate::{configuration, server_error};
 
@@ -40,10 +41,14 @@ pub async fn start(config: Settings) -> Result<(), ServerError> {
                 let db = Arc::clone(&db);
                 tokio::spawn(async move {
                     tracing::debug!("New connection");
+                    ACTIVE_CONNECTIONS.inc();
+                    let _guard = scopeguard::guard((), |_| {
+                        ACTIVE_CONNECTIONS.sub(1.0);
+                        tracing::debug!("Connection ended.")
+                    });
                     if let Err(e) = handle_connection(stream, address, sender, clients, db).await {
                         tracing::error!("Error while handling connection: {}", e);
                     }
-                    tracing::debug!("Connection ended.")
                 });
             }
             Err(e) => tracing::error!("Encountered network error from Tcp stream: {e}"),
@@ -110,6 +115,7 @@ async fn broadcast_messages(
     let mut recv_stream = receiver.into_stream();
 
     while let Some((ip_addr, ref message)) = recv_stream.next().await {
+        MESSAGES_COUNTER.inc();
         let mut clients_iter = clients.lock().await;
 
         let clients_to_remove: Vec<SocketAddr> = stream::iter(

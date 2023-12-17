@@ -1,8 +1,8 @@
-use std::fmt::{Debug, Display};
-
+use server::metrics::{self};
 use server::startup::start;
 use server::{api::Api, configuration::get_configuration};
 use shared::tracing::{get_subscriber, init_subscriber};
+use std::fmt::{Debug, Display};
 use tokio::task::JoinError;
 
 #[tokio::main]
@@ -15,6 +15,8 @@ async fn main() {
     }
 
     let configuration = get_configuration().expect("Failed to read configuration.");
+
+    metrics::register_metrics();
 
     let Ok(api) = Api::build(configuration.clone()) else {
         tracing::error!("Error while setting up api.");
