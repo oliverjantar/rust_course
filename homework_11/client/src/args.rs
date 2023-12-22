@@ -19,4 +19,8 @@ pub struct Args {
     /// Directory to save tracing logs from client
     #[arg(short, long, default_value = "./logs")]
     pub logs_dir: String,
+
+    /// End-to-End Encryption key
+    #[arg(long)]
+    pub e2e_encryption_key: Option<String>,
 }

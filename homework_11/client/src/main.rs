@@ -47,8 +47,14 @@ async fn start<T>(args: Args, writer: T) -> Result<()>
 where
     T: AsyncWrite + Unpin + Send + 'static,
 {
-    let (client_sender, client_receiver) =
-        Client::connect(writer, args.host, args.port, &args.output_dir).await?;
+    let (client_sender, client_receiver) = Client::connect(
+        writer,
+        args.host,
+        args.port,
+        &args.output_dir,
+        args.e2e_encryption_key,
+    )
+    .await?;
 
     let handle = tokio::spawn(client_sender.start());
     let handle_receiver = tokio::spawn(client_receiver.start());

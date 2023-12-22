@@ -65,15 +65,15 @@ $ ./scripts/init_db.sh
 $ cargo run --bin server
 ```
 
-
 # Client
 
 Chat client is a TCP client that connects to a server. It allows users to send text messages, images and files to other connected clients.
 
 ### Authentication
 When client is started, it connects to the server on a given host and port. It then asks for a username and password to authenticate with the server.
-If the user with a given username doesn't exist, it is created and user can login in the future. If the user exists, the password is verified agains the stored hash and
-response is sent back to the client. Just follow the messages in the standard output.
+If the user with a given username doesn't exist, it is created and user can login in the future. If the user exists, the password is verified agains the stored hash and response is sent back to the client. Just follow the messages in the standard output.
+
+User's password is hashed using `PBKDF2` algorithm with `SHA512` hash function and 100_000 iterations. The salt is randomly generated for each user and stored in the database.
 
 If you enter an incorrect password, you need to enter username and password again.
 ```
@@ -81,8 +81,6 @@ Login failed, incorrect password.
 Please try to log in again.
 Enter your username.
 ```
-
-
 
 ### Sending messages
 Once user is authenticated, it can send messages to other connected clients.
@@ -97,6 +95,16 @@ Text messages does not require any special commands and are sent as they are.
 ### Tracing
 When client is started, debug tracing logs are saved to `./logs` directory. The output can be changed with argument `--logs-dir <LOGS_DIR>`.
 
+### End-to-End Encryption
+As a bonus I implemented end to end symmetric encryption for text messages on the client side. It is not perfect and a lot of message metadata is still visible, but it is a good start.
+
+Client can be started with end-to-end encryption by passing the `--e2e-encryption-key <E2E_ENCRYPTION_KEY>` parameter. E.g. `
+cargo run --bin client -- --e2e-encryption-key scrt
+`
+If one of the clients with a different encryption key is connected to the server, it won't be able to read the messages. Instead message `Unable to decrypt message from <USER>.` will be displayed.
+
+The messages are also stored encrypted in the database. Api is still returning them as base-64 encoded strings to the web-client, but it's not possible to decrypt it without the secret key.
+
 ### Running a client
 
 ```
@@ -107,12 +115,13 @@ Client can be started with these optional arguments:
 
 ```
 Options:
-      --host <HOST>                         Server Host [default: 127.0.0.1]
-  -p, --port <PORT>                         Server Port [default: 11111]
-  -o, --output-dir <OUTPUT_DIR>             Directory to save incoming files and images [default: ./data]
-  -l, --logs-dir <LOGS_DIR>                 Directory to save tracing logs from client [default: ./logs]
-  -u, --username <USERNAME>                 Username [default: anonymous]
-  -h, --help                                Print help
+      --host <HOST>                             Server Host [default: 127.0.0.1]
+  -p, --port <PORT>                             Server Port [default: 11111]
+  -o, --output-dir <OUTPUT_DIR>                 Directory to save incoming files and images [default: ./data]
+  -l, --logs-dir <LOGS_DIR>                     Directory to save tracing logs from client [default: ./logs]
+  -u, --username <USERNAME>                     Username [default: anonymous]
+      --e2e-encryption-key <E2E_ENCRYPTION_KEY> End-to-End Encryption key
+  -h, --help                                    Print help
   ```
 
 # Running a server and client

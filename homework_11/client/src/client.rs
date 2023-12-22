@@ -1,6 +1,7 @@
 use crate::{
     client_error::ClientError,
     command::Command,
+    encryption::{self, decrypt_payload, encrypt_payload},
     utils::{save_file, write_to_output},
 };
 use anyhow::Result;
@@ -30,6 +31,7 @@ impl Client {
         host: Ipv4Addr,
         port: u32,
         output_dir: &str,
+        e2e_encryption: Option<String>,
     ) -> Result<(
         ClientSender<OwnedWriteHalf>,
         ClientReceiver<OwnedReadHalf, T>,
@@ -55,9 +57,14 @@ impl Client {
 
         write_to_output(&mut writer, b"Connected. You can now send messages.\n").await?;
 
+        if e2e_encryption.is_some() {
+            write_to_output(&mut writer, b"E2E encryption enabled.\n").await?;
+        }
+        let key = e2e_encryption.map(|key| encryption::pad_to_32_bytes(key.as_bytes()));
+
         // Create both ends of the client. I split it to two structs to make it easier to test.
-        let receiver = ClientReceiver::new(read_half, writer, output_dir);
-        let sender = ClientSender::new(write_half);
+        let receiver = ClientReceiver::new(read_half, writer, output_dir, key);
+        let sender = ClientSender::new(write_half, key);
 
         Ok((sender, receiver))
     }
@@ -102,14 +109,18 @@ where
     T: AsyncWrite + Unpin,
 {
     stream: T,
+    encryption_key: Option<[u8; 32]>,
 }
 
 impl<T> ClientSender<T>
 where
     T: AsyncWrite + Unpin,
 {
-    fn new(stream: T) -> Self {
-        ClientSender { stream }
+    fn new(stream: T, encryption_key: Option<[u8; 32]>) -> Self {
+        ClientSender {
+            stream,
+            encryption_key,
+        }
     }
 
     /// Starts listening for user input and sends it to the server.
@@ -124,7 +135,7 @@ where
                 return Ok(());
             }
 
-            let data = match cmd.into_message().await {
+            let mut data = match cmd.into_message().await {
                 Ok(data) => data,
                 Err(e) => {
                     tracing::error!("Cannot process command. {e}");
@@ -132,6 +143,10 @@ where
                     continue;
                 }
             };
+
+            if let Some(key) = self.encryption_key {
+                data = encrypt_payload(data, &key)?;
+            }
 
             let msg = Message::new(data);
 
@@ -145,6 +160,7 @@ pub struct ClientReceiver<T, U> {
     stream: T,
     writer: U,
     output_dir: String,
+    encryption_key: Option<[u8; 32]>,
 }
 
 impl<T, U> ClientReceiver<T, U>
@@ -152,11 +168,12 @@ where
     T: AsyncRead + Unpin,
     U: AsyncWrite + Unpin,
 {
-    fn new(stream: T, writer: U, output_dir: &str) -> Self {
+    fn new(stream: T, writer: U, output_dir: &str, encryption_key: Option<[u8; 32]>) -> Self {
         Self {
             stream,
             writer,
             output_dir: output_dir.to_string(),
+            encryption_key,
         }
     }
 
@@ -165,7 +182,13 @@ where
 
         while let Ok(message) = Message::receive_msg(&mut self.stream).await {
             tracing::debug!("received msg");
-            if let Err(e) = Self::handle_message(message, &mut self.writer, &self.output_dir).await
+            if let Err(e) = Self::handle_message(
+                message,
+                &mut self.writer,
+                &self.output_dir,
+                &self.encryption_key,
+            )
+            .await
             {
                 tracing::error!("Error while handling message. {e}");
                 eprintln!("Error while handling message. {e}");
@@ -179,10 +202,32 @@ where
     /// Handles the received message. It writes the message to the `writer`. If message ista if it is an image or a file.
     #[tracing::instrument(name = "Handling message", skip_all)]
     async fn handle_message(
-        message: Message,
+        mut message: Message,
         writer: &mut U,
         output_dir: &str,
+        encryption_key: &Option<[u8; 32]>,
     ) -> Result<(), ClientError> {
+        if let Some(key) = encryption_key {
+            let decrypted_data = match decrypt_payload(message.data, key) {
+                Ok(data) => data,
+                Err(e) => {
+                    tracing::warn!("Decrypting payload error. {e}");
+                    write_to_output(
+                        writer,
+                        format!(
+                            "Unable to decrypt message from {}.\n",
+                            message.sender.as_ref().unwrap_or(&"Anonymous".to_string())
+                        )
+                        .as_bytes(),
+                    )
+                    .await?;
+
+                    return Ok(());
+                }
+            };
+            message.data = decrypted_data;
+        }
+
         write_to_output(writer, message.to_string().as_bytes()).await?;
         Self::store_data(message.data, writer, output_dir).await?;
         Ok(())
@@ -274,6 +319,7 @@ mod tests {
             stream,
             writer: test_writer,
             output_dir: "./".to_string(),
+            encryption_key: None,
         };
 
         let payload = MessagePayload::Text("Hello world!".to_string());
