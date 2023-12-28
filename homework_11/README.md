@@ -1,10 +1,37 @@
 # Chat client & server
 
 ## Contents
-1. [Server](#server)
-2. [Client](#client)
-3. [Running a server and client](#running-a-server-and-client)
-4. [Web client](#web-client)
+1. [Run everything](#start-everything)
+2. [Server](#server)
+3. [Client](#client)
+4. [Running a server and client](#running-a-server-and-client)
+5. [Web client](#web-client)
+
+# Run everything
+
+Run server on default port `11111` with api on port `11112`
+```
+# start prometheus and grafana
+$ docker compose up
+
+$ cd ./server
+
+# start postgres and run migrations
+$ ./scripts/init_db.sh
+$ cargo run --bin server
+```
+
+Run client from root
+```
+$ cargo run --bin client 
+```
+Run web client from root
+```
+$ cd ./web-client
+$ npm install
+$ npm run dev -- --open
+```
+
 
 # Server
 
